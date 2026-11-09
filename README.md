@@ -24,14 +24,15 @@ Service worker (`sw.js`) hanya aktif bila situs disajikan lewat http atau https,
 
 | Berkas | Fungsi |
 | --- | --- |
-| `index.html` | Kerangka halaman: bilah atas, sidebar, dan wadah tampilan. |
+| `index.html` | Kerangka halaman: bilah atas (merek, pencarian, toggle bahasa dan tema), strip chip kategori, dan wadah tampilan. |
 | `styles.css` | Seluruh gaya, tema gelap dan terang, tata letak desktop dan mobile. |
 | `app.js` | Mesin aplikasi: router hash, render form dari skema, validasi, konsol hasil, favorit, riwayat, pencarian, ganti tema dan bahasa. |
 | `tools.js` | Data: 12 kategori, 55 tool, dan 10 cuplikan database script. Tiap tool berisi skema form, fungsi pembuat script, dan penjelasan Bahasa Indonesia. |
 | `manifest.webmanifest` dan `icon.svg` | Metadata agar situs bisa dipasang seperti aplikasi (PWA). |
 | `sw.js` | Service worker penyimpan berkas aplikasi untuk pemakaian luring. |
 | `DESIGN.md` | Arah desain: palet, tipografi, dan alasan setiap keputusan besar. |
-| `preview/` | Tangkapan layar hasil verifikasi (desktop dan mobile). |
+| `preview/` | Tangkapan layar hasil verifikasi desain pertama (desktop dan mobile). |
+| `preview-v2/` | Tangkapan layar hasil verifikasi desain ulang compact (beranda dan tool pada lebar 320 sampai 1600, plus tema terang). |
 
 ## Cakupan tool (55)
 

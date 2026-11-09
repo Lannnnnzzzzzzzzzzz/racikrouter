@@ -6,9 +6,8 @@
 
 var RR = window.RR;
 var $view = document.getElementById('view');
-var $sidebar = document.getElementById('sidebar');
-var $backdrop = document.getElementById('backdrop');
-var $menuBtn = document.getElementById('menuBtn');
+var $chipBar = document.getElementById('chipBar');
+var $search = document.getElementById('globalSearch');
 
 function esc(s) {
   return String(s === undefined || s === null ? '' : s)
@@ -42,6 +41,7 @@ var I18N = {
     brandSub: 'Generator script MikroTik', sideFoot: 'Semua proses berjalan di browser kamu. Tidak ada data yang dikirim ke server mana pun.',
     footText: 'Script diracik dari isian kamu, jalankan di RouterOS v7 setelah kamu periksa. Situs ini tidak berafiliasi dengan MikroTik.',
     home: 'Beranda', snippets: 'Database Script', searchPh: 'Cari tool, misalnya failover, hotspot, wireguard, subnet...',
+    searchShort: 'Cari tool...',
     homeTitle: 'Racik script MikroTik tanpa mengetik dari nol',
     homeSub: 'Pilih tool, isi kolomnya, script RouterOS v7 langsung jadi dan berubah mengikuti isianmu. Salin ke terminal, atau unduh sebagai berkas .rsc.',
     favs: 'Favorit kamu', history: 'Terakhir dipakai', allTools: 'Semua tool',
@@ -63,6 +63,7 @@ var I18N = {
     brandSub: 'MikroTik script generator', sideFoot: 'Everything runs in your browser. No data is sent to any server.',
     footText: 'Scripts are built from your input, run them on RouterOS v7 after reviewing. This site is not affiliated with MikroTik.',
     home: 'Home', snippets: 'Script Database', searchPh: 'Search tools, e.g. failover, hotspot, wireguard, subnet...',
+    searchShort: 'Search tools...',
     homeTitle: 'Build MikroTik scripts without typing from scratch',
     homeSub: 'Pick a tool, fill the form, and the RouterOS v7 script appears instantly and follows your input. Copy it to a terminal, or download it as an .rsc file.',
     favs: 'Your favorites', history: 'Recently used', allTools: 'All tools',
@@ -99,7 +100,7 @@ var theme = store('rr-theme', 'dark');
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
   var meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) { meta.setAttribute('content', theme === 'light' ? '#F7F2E7' : '#10161D'); }
+  if (meta) { meta.setAttribute('content', theme === 'light' ? '#F4EFE3' : '#0D1218'); }
 }
 document.getElementById('themeBtn').addEventListener('click', function () {
   theme = theme === 'light' ? 'dark' : 'light';
@@ -116,16 +117,21 @@ function applyLangStatic() {
   });
   document.getElementById('langId').setAttribute('aria-pressed', lang === 'id' ? 'true' : 'false');
   document.getElementById('langEn').setAttribute('aria-pressed', lang === 'en' ? 'true' : 'false');
+  if ($search) { $search.setAttribute('placeholder', t('searchShort')); $search.setAttribute('aria-label', t('searchPh')); }
 }
-document.getElementById('langId').addEventListener('click', function () { if (lang !== 'id') { lang = 'id'; save('rr-lang', lang); applyLangStatic(); buildSidebar(); route(); } });
-document.getElementById('langEn').addEventListener('click', function () { if (lang !== 'en') { lang = 'en'; save('rr-lang', lang); applyLangStatic(); buildSidebar(); route(); } });
+document.getElementById('langId').addEventListener('click', function () { if (lang !== 'id') { lang = 'id'; save('rr-lang', lang); applyLangStatic(); buildChips(); route(); } });
+document.getElementById('langEn').addEventListener('click', function () { if (lang !== 'en') { lang = 'en'; save('rr-lang', lang); applyLangStatic(); buildChips(); route(); } });
 
-/* ---------- Drawer mobile ---------- */
-function openDrawer() { $sidebar.classList.add('open'); $backdrop.hidden = false; $menuBtn.setAttribute('aria-expanded', 'true'); }
-function closeDrawer() { $sidebar.classList.remove('open'); $backdrop.hidden = true; $menuBtn.setAttribute('aria-expanded', 'false'); }
-$menuBtn.addEventListener('click', function () { $sidebar.classList.contains('open') ? closeDrawer() : openDrawer(); });
-$backdrop.addEventListener('click', closeDrawer);
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeDrawer(); } });
+/* ---------- Pencarian global di bilah atas ---------- */
+var homeQuery = '';
+function normQuery(s) { return String(s || '').trim().toLowerCase(); }
+if ($search) {
+  $search.addEventListener('input', function () {
+    homeQuery = $search.value;
+    if (currentRoute !== 'home') { location.hash = '#/'; }
+    else { renderHomeLists(normQuery(homeQuery)); }
+  });
+}
 
 /* ---------- Favorit dan riwayat ---------- */
 function getFavs() { return store('rr-fav', []); }
@@ -143,20 +149,20 @@ function pushHistory(id) {
   save('rr-history', h.slice(0, 10));
 }
 
-/* ---------- Sidebar ---------- */
-function buildSidebar() {
-  var cur = location.hash || '#/';
-  var html = '<div class="side-group">';
-  html += '<a class="side-link side-home' + (cur === '#/' ? ' active' : '') + '" href="#/">' + esc(t('home')) + '</a>';
-  html += '<a class="side-link' + (cur === '#/snippets' ? ' active' : '') + '" href="#/snippets">' + esc(t('snippets')) + '<span class="count">' + RR.snippets.length + '</span></a>';
-  html += '</div><div class="side-group"><p class="side-tag">' + esc(t('allTools')) + '</p>';
-  RR.cats.forEach(function (c, i) {
+/* ---------- Strip chip kategori ---------- */
+function buildChips() {
+  var h = location.hash || '#/';
+  var active = 'home';
+  if (h === '#/snippets') { active = 'snippets'; }
+  else if (h.indexOf('#/kategori/') === 0) { active = h.slice('#/kategori/'.length); }
+  else if (h.indexOf('#/tool/') === 0) { var tl = byId(h.slice('#/tool/'.length)); if (tl) { active = tl.cat; } }
+  var html = '<a class="chip' + (active === 'home' ? ' active' : '') + '" href="#/">' + esc(t('home')) + '</a>';
+  RR.cats.forEach(function (c) {
     var n = RR.tools.filter(function (x) { return x.cat === c.id; }).length;
-    var active = cur === '#/kategori/' + c.id;
-    html += '<a class="side-link' + (active ? ' active' : '') + '" href="#/kategori/' + c.id + '"><span class="mono" style="font-size:11px;color:var(--muted)">' + pad2(i + 1) + '</span>' + esc(catName(c)) + '<span class="count">' + n + '</span></a>';
+    html += '<a class="chip' + (active === c.id ? ' active' : '') + '" href="#/kategori/' + c.id + '">' + esc(catName(c)) + '<span class="chip-n">' + n + '</span></a>';
   });
-  html += '</div>';
-  document.getElementById('sideNav').innerHTML = html;
+  html += '<a class="chip' + (active === 'snippets' ? ' active' : '') + '" href="#/snippets">' + esc(t('snippets')) + '<span class="chip-n">' + RR.snippets.length + '</span></a>';
+  $chipBar.innerHTML = html;
 }
 
 /* ---------- Potongan tampilan bersama ---------- */
@@ -166,7 +172,7 @@ function favBtnHtml(tool) {
 }
 function toolRowHtml(tool) {
   return '<li class="tool-row"><div class="tool-row-inner">' +
-    '<a class="tool-link" href="#/tool/' + tool.id + '"><span class="tool-name">' + esc(toolName(tool)) + '</span>' +
+    '<a class="tool-link" href="#/tool/' + tool.id + '" title="' + esc(tool.desc) + '"><span class="tool-name">' + esc(toolName(tool)) + '</span>' +
     '<span class="tool-desc">' + esc(tool.desc) + '</span></a>' + favBtnHtml(tool) + '</div></li>';
 }
 function toolListHtml(list) {
@@ -196,14 +202,11 @@ var currentRoute = 'home';
 function renderHome() {
   currentRoute = 'home';
   document.title = 'RacikRouter, Generator Script MikroTik RouterOS Gratis';
+  document.body.classList.remove('has-actionbar');
   $view.innerHTML =
     '<div class="page-head"><h1>' + esc(t('homeTitle')) + '</h1><p>' + esc(t('homeSub')) + '</p></div>' +
-    '<div class="search-wrap">' + ICON_SEARCH +
-    '<input class="search-input" id="searchInput" type="search" autocomplete="off" placeholder="' + esc(t('searchPh')) + '" aria-label="' + esc(t('searchPh')) + '"></div>' +
     '<div id="homeLists"></div>';
-  var input = document.getElementById('searchInput');
-  input.addEventListener('input', function () { renderHomeLists(input.value.trim().toLowerCase()); });
-  renderHomeLists('');
+  renderHomeLists(normQuery(homeQuery));
 }
 function renderHomeLists(query) {
   var box = document.getElementById('homeLists');
@@ -235,6 +238,7 @@ function renderHomeLists(query) {
 /* ---------- Halaman kategori ---------- */
 function renderCategory(catId) {
   currentRoute = 'kategori';
+  document.body.classList.remove('has-actionbar');
   var c = catById(catId);
   if (!c) { renderHome(); return; }
   var list = RR.tools.filter(function (x) { return x.cat === c.id; });
@@ -249,6 +253,7 @@ function renderCategory(catId) {
 /* ---------- Halaman database script ---------- */
 function renderSnippets() {
   currentRoute = 'snippets';
+  document.body.classList.remove('has-actionbar');
   document.title = t('snippets') + ', RacikRouter';
   var html = '<a class="back-link" href="#/">' + esc(t('back')) + '</a>' +
     '<div class="page-head"><h1>' + esc(t('snippets')) + '</h1><p>' + esc(t('snipSub')) + '</p></div><div>';
@@ -369,27 +374,28 @@ function renderTool(id) {
   });
 
   var html = '<a class="back-link" href="#/">' + esc(t('back')) + '</a>' +
-    '<div class="page-head"><div class="tool-title-row"><h1>' + esc(toolName(tool)) + '</h1>' + favBtnHtml(tool) + '</div>' +
-    '<p>' + esc(tool.desc) + '</p>' +
-    '<p><span class="cat-tag">' + pad2(catIndex(tool.cat) + 1) + ' / ' + esc(tool.cat.toUpperCase()) + '</span></p></div>' +
+    '<div class="page-head tool-head"><div class="tool-title-row"><h1>' + esc(toolName(tool)) + '</h1>' +
+    '<span class="cat-tag">' + pad2(catIndex(tool.cat) + 1) + ' / ' + esc(tool.cat.toUpperCase()) + '</span>' + favBtnHtml(tool) + '</div>' +
+    '<p>' + esc(tool.desc) + '</p></div>' +
     '<div class="tool-layout"><section class="panel" aria-label="' + esc(t('formTitle')) + '">' +
     '<h2>' + esc(t('formTitle')) + '</h2><p class="panel-sub">' + esc(t('formSub')) + '</p>' +
     '<form id="toolForm" novalidate>';
 
   var lastGroup = null;
   var groupOpen = false;
+  var groupCount = 0;
   tool.fields.forEach(function (fd) {
     if (fd.g && fd.g !== lastGroup) {
-      if (groupOpen) { html += '</fieldset>'; }
-      html += '<fieldset class="group"><legend>' + esc(groupName(fd.g)) + '</legend>';
-      groupOpen = true; lastGroup = fd.g;
+      if (groupOpen) { html += '</div>'; }
+      html += '<div class="group"><h3 class="group-title' + (groupCount === 0 ? ' first' : '') + '">' + esc(groupName(fd.g)) + '</h3>';
+      groupOpen = true; lastGroup = fd.g; groupCount++;
     }
     var val = values[fd.k];
     if (fd.t === 'check') {
       html += '<div class="field-check"><input type="checkbox" id="fld-' + fd.k + '" data-key="' + fd.k + '"' + (val ? ' checked' : '') + '>' +
         '<label for="fld-' + fd.k + '">' + esc(fd.label) + (fd.help ? '<span class="help">' + esc(fd.help) + '</span>' : '') + '</label></div>';
     } else if (fd.swatch) {
-      html += '<div class="field" data-field="' + fd.k + '"><label id="lbl-' + fd.k + '">' + esc(fd.label) + '</label>' +
+      html += '<div class="field span2" data-field="' + fd.k + '"><label id="lbl-' + fd.k + '">' + esc(fd.label) + '</label>' +
         '<input type="hidden" id="fld-' + fd.k + '" data-key="' + fd.k + '" value="' + esc(val) + '">' +
         '<div class="swatches" role="group" aria-labelledby="lbl-' + fd.k + '">';
       fd.opts.forEach(function (o) {
@@ -406,7 +412,7 @@ function renderTool(id) {
       });
       html += '</select>' + (fd.help ? '<p class="help">' + esc(fd.help) + '</p>' : '') + '<p class="field-error" role="alert"></p></div>';
     } else if (fd.t === 'textarea') {
-      html += '<div class="field" data-field="' + fd.k + '"><label for="fld-' + fd.k + '">' + esc(fd.label) + '</label>' +
+      html += '<div class="field span2" data-field="' + fd.k + '"><label for="fld-' + fd.k + '">' + esc(fd.label) + '</label>' +
         '<textarea id="fld-' + fd.k + '" data-key="' + fd.k + '" spellcheck="false">' + esc(val) + '</textarea>' +
         (fd.help ? '<p class="help">' + esc(fd.help) + '</p>' : '') + '<p class="field-error" role="alert"></p></div>';
     } else {
@@ -419,7 +425,7 @@ function renderTool(id) {
         (fd.help ? '<p class="help">' + esc(fd.help) + '</p>' : '') + '<p class="field-error" role="alert"></p></div>';
     }
   });
-  if (groupOpen) { html += '</fieldset>'; }
+  if (groupOpen) { html += '</div>'; }
   html += '</form></section>';
 
   html += '<div class="result-col">';
@@ -444,6 +450,12 @@ function renderTool(id) {
   }
   html += '<details class="explain" id="explainBox"><summary>' + esc(t('explain')) + '</summary><div class="explain-body"><ul id="explainList"></ul></div></details>';
   html += '</div></div>';
+  var copyLabel = isLogin ? t('copyHtml') : t('copy');
+  var dlLabel = isLogin ? t('downloadHtml') : (tool.kind === 'calc' ? t('downloadTxt') : t('download'));
+  html += '<div class="action-bar"><span class="copied-note" id="copyNoteM">' + esc(t('copied')) + '</span>' +
+    '<button type="button" class="btn" id="copyBtnM">' + ICON_COPY + esc(copyLabel) + '</button>' +
+    '<button type="button" class="btn btn-primary" id="dlBtnM">' + ICON_DL + esc(dlLabel) + '</button></div>';
+  document.body.classList.add('has-actionbar');
   $view.innerHTML = html;
 
   bindFavButtons($view);
@@ -454,6 +466,8 @@ function renderTool(id) {
   var dot = document.getElementById('statusDot');
   var copyBtn = document.getElementById('copyBtn');
   var dlBtn = document.getElementById('dlBtn');
+  var copyBtnM = document.getElementById('copyBtnM');
+  var dlBtnM = document.getElementById('dlBtnM');
   var explainList = document.getElementById('explainList');
   var preview = document.getElementById('loginPreview');
 
@@ -513,6 +527,8 @@ function renderTool(id) {
     }
     copyBtn.disabled = bad;
     dlBtn.disabled = bad;
+    if (copyBtnM) { copyBtnM.disabled = bad; }
+    if (dlBtnM) { dlBtnM.disabled = bad; }
     update.out = out;
     update.bad = bad;
   }
@@ -538,6 +554,15 @@ function renderTool(id) {
     if (update.bad) { return; }
     copyText(update.out, document.getElementById('copyNote'));
   });
+  if (copyBtnM) {
+    copyBtnM.addEventListener('click', function () {
+      if (update.bad) { return; }
+      copyText(update.out, document.getElementById('copyNoteM'));
+    });
+  }
+  if (dlBtnM) {
+    dlBtnM.addEventListener('click', function () { dlBtn.click(); });
+  }
   dlBtn.addEventListener('click', function () {
     if (update.bad) { return; }
     if (isLogin) { downloadFile('login.html', update.out, 'text/html;charset=utf-8'); }
@@ -550,8 +575,7 @@ function renderTool(id) {
 /* ---------- Router ---------- */
 function route() {
   var h = location.hash || '#/';
-  buildSidebar();
-  closeDrawer();
+  buildChips();
   if (h === '#/' || h === '#' || h === '') { renderHome(); }
   else if (h === '#/snippets') { renderSnippets(); }
   else if (h.indexOf('#/kategori/') === 0) { renderCategory(h.slice('#/kategori/'.length)); }
@@ -566,7 +590,7 @@ window.addEventListener('hashchange', route);
 /* ---------- Mulai ---------- */
 applyTheme();
 applyLangStatic();
-buildSidebar();
+buildChips();
 route();
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
   navigator.serviceWorker.register('sw.js').catch(function () { /* situs tetap jalan tanpa service worker */ });
