@@ -24,21 +24,21 @@ Service worker (`sw.js`) hanya aktif bila situs disajikan lewat http atau https,
 
 | Berkas | Fungsi |
 | --- | --- |
-| `index.html` | Kerangka halaman: bilah atas (merek, pencarian, toggle bahasa dan tema), strip chip kategori, dan wadah tampilan. |
-| `styles.css` | Seluruh gaya, tema gelap dan terang, tata letak desktop dan mobile. |
-| `app.js` | Mesin aplikasi: router hash, render form dari skema, validasi, konsol hasil, favorit, riwayat, pencarian, ganti tema dan bahasa. |
-| `tools.js` | Data: 12 kategori, 55 tool, dan 10 cuplikan database script. Tiap tool berisi skema form, fungsi pembuat script, dan penjelasan Bahasa Indonesia. |
+| `index.html` | Kerangka halaman: sidebar navigasi (menu, kategori beserta jumlah tool), bilah atas tipis (pencarian, toggle bahasa dan tema), dan wadah tampilan. |
+| `styles.css` | Seluruh gaya, tema terang (wajah utama) dan gelap, tata letak desktop dan mobile. |
+| `app.js` | Mesin aplikasi: router hash, render form dari skema, validasi, konsol hasil, favorit, riwayat, pencarian, ganti tema dan bahasa, sidebar dan drawer. |
+| `tools.js` | Data: 12 kategori, 73 tool, dan 10 cuplikan database script. Tiap tool berisi skema form, fungsi pembuat script, dan penjelasan Bahasa Indonesia. |
 | `manifest.webmanifest` dan `icon.svg` | Metadata agar situs bisa dipasang seperti aplikasi (PWA). |
 | `sw.js` | Service worker penyimpan berkas aplikasi untuk pemakaian luring. |
 | `DESIGN.md` | Arah desain: palet, tipografi, dan alasan setiap keputusan besar. |
 | `preview/` | Tangkapan layar hasil verifikasi desain pertama (desktop dan mobile). |
-| `preview-v2/` | Tangkapan layar hasil verifikasi desain ulang compact (beranda dan tool pada lebar 320 sampai 1600, plus tema terang). |
+| `preview-v3/` | Tangkapan layar hasil rombak desain gaya dashboard (beranda dan tool pada lebar 320 sampai 1600, plus tema gelap). |
 
-## Cakupan tool (55)
+## Cakupan tool (73)
 
-- Dasar dan Sistem: 11 tool (identitas dan NTP, IP LAN, DHCP server, DHCP client, DNS, ganti password, Netwatch, backup ke email, laporan Telegram, watchdog pemulihan, Kid Control).
+- Dasar dan Sistem: 17 tool (identitas dan NTP, IP LAN, DHCP server, DHCP client, DNS, ganti password, Netwatch, backup ke email, laporan Telegram, watchdog pemulihan, Kid Control, tambah pengguna admin, pool IP, reboot otomatis, ekspor backup .rsc, pelindung bootloader, bersihkan cache DNS).
 - Routing: 10 tool (rute statis, failover recursive, load balancing PCC, load balancing PCC 3 sampai 5 WAN, load balancing ECMP, policy routing aplikasi, OSPF, BGP, VRRP, VLAN per gedung untuk segmentasi sekolah dan kantor).
-- Firewall dan NAT: 6 tool (masquerade, port forwarding, hairpin NAT, blokir situs, proteksi dasar, pisah trafik game).
+- Firewall dan NAT: 18 tool (masquerade, port forwarding, hairpin NAT, blokir situs, proteksi dasar, pisah trafik game, anti DDoS, anti hack exploit, anti hack MikroTik, anti netcut, anti ping WAN, blokir akses modem, blokir IP, blokir MAC, blokir proxy terbuka, blokir DNS rekursif terbuka, blokir port, bypass trafik lokal).
 - Queue: 4 tool (simple queue, queue tree PCQ, kalkulator burst, prioritas aplikasi).
 - Hotspot dan PPP: 6 tool (hotspot server, profil voucher, PPPoE server, PPPoE client, isolasi pelanggan PPPoE, User Manager).
 - VPN: 6 tool (WireGuard, L2TP, SSTP, sertifikat, PPTP client, OpenVPN client).
@@ -57,7 +57,8 @@ Service worker (`sw.js`) hanya aktif bila situs disajikan lewat http atau https,
 - Penjelasan bagian per bagian dalam Bahasa Indonesia di setiap halaman tool.
 - Favorit dan riwayat terakhir dipakai, tersimpan di localStorage browser.
 - Pencarian tool langsung dari beranda.
-- Tema gelap dan terang, keduanya penuh dan bisa diganti kapan pun.
+- Navigasi sidebar di desktop (mulai 1024px) dengan jumlah tool per kategori dan grup yang bisa dilipat; di layar kecil menjadi drawer dari tombol menu, Escape menutupnya.
+- Tema terang sebagai wajah utama dan tema gelap sebagai mode alternatif, keduanya penuh dan bisa diganti kapan pun.
 - Bahasa antarmuka Indonesia dan Inggris (lihat batasan di bawah).
 - Navigasi ramah keyboard: Tab untuk berpindah, Escape menutup drawer di mobile, indikator fokus selalu terlihat.
 - Setiap hasil script diawali komentar berbahasa Indonesia dan disesuaikan untuk RouterOS v7.

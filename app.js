@@ -6,8 +6,11 @@
 
 var RR = window.RR;
 var $view = document.getElementById('view');
-var $chipBar = document.getElementById('chipBar');
 var $search = document.getElementById('globalSearch');
+var $sidebar = document.getElementById('sidebar');
+var $sideNav = document.getElementById('sideNav');
+var $scrim = document.getElementById('scrim');
+var $menuBtn = document.getElementById('menuBtn');
 
 function esc(s) {
   return String(s === undefined || s === null ? '' : s)
@@ -48,6 +51,7 @@ var I18N = {
     favEmpty: 'Belum ada favorit. Ketuk bintang pada baris tool mana pun untuk menyimpannya di sini.',
     hisEmpty: 'Belum ada riwayat. Tool yang kamu buka akan muncul di sini.',
     noResult: 'Tidak ada tool yang cocok dengan kata itu. Coba kata lain, misalnya nama protokol atau nama fitur.',
+    navMenu: 'Menu', navCats: 'Kategori',
     back: 'Kembali ke beranda', formTitle: 'Isian', formSub: 'Script di panel hasil berubah langsung setiap kamu mengubah isian.',
     result: 'Hasil script', preview: 'Pratinjau halaman login', explain: 'Penjelasan bagian per bagian',
     copy: 'Salin script', copyHtml: 'Salin HTML', download: 'Unduh .rsc', downloadTxt: 'Unduh .txt', downloadHtml: 'Unduh login.html',
@@ -70,6 +74,7 @@ var I18N = {
     favEmpty: 'No favorites yet. Tap the star on any tool row to keep it here.',
     hisEmpty: 'No history yet. Tools you open will show up here.',
     noResult: 'No tool matches that word. Try another, for example a protocol or feature name.',
+    navMenu: 'Menu', navCats: 'Categories',
     back: 'Back to home', formTitle: 'Form', formSub: 'The script in the result panel updates live as you change the form.',
     result: 'Generated script', preview: 'Login page preview', explain: 'Section by section explanation',
     copy: 'Copy script', copyHtml: 'Copy HTML', download: 'Download .rsc', downloadTxt: 'Download .txt', downloadHtml: 'Download login.html',
@@ -96,11 +101,11 @@ var ICON_DL = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" strok
 var ICON_SEARCH = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>';
 
 /* ---------- Tema ---------- */
-var theme = store('rr-theme', 'dark');
+var theme = store('rr-theme', 'light');
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
   var meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) { meta.setAttribute('content', theme === 'light' ? '#F4EFE3' : '#0D1218'); }
+  if (meta) { meta.setAttribute('content', theme === 'light' ? '#F4F6F8' : '#101214'); }
 }
 document.getElementById('themeBtn').addEventListener('click', function () {
   theme = theme === 'light' ? 'dark' : 'light';
@@ -119,8 +124,8 @@ function applyLangStatic() {
   document.getElementById('langEn').setAttribute('aria-pressed', lang === 'en' ? 'true' : 'false');
   if ($search) { $search.setAttribute('placeholder', t('searchShort')); $search.setAttribute('aria-label', t('searchPh')); }
 }
-document.getElementById('langId').addEventListener('click', function () { if (lang !== 'id') { lang = 'id'; save('rr-lang', lang); applyLangStatic(); buildChips(); route(); } });
-document.getElementById('langEn').addEventListener('click', function () { if (lang !== 'en') { lang = 'en'; save('rr-lang', lang); applyLangStatic(); buildChips(); route(); } });
+document.getElementById('langId').addEventListener('click', function () { if (lang !== 'id') { lang = 'id'; save('rr-lang', lang); applyLangStatic(); buildSidebar(); route(); } });
+document.getElementById('langEn').addEventListener('click', function () { if (lang !== 'en') { lang = 'en'; save('rr-lang', lang); applyLangStatic(); buildSidebar(); route(); } });
 
 /* ---------- Pencarian global di bilah atas ---------- */
 var homeQuery = '';
@@ -149,21 +154,86 @@ function pushHistory(id) {
   save('rr-history', h.slice(0, 10));
 }
 
-/* ---------- Strip chip kategori ---------- */
-function buildChips() {
+/* ---------- Sidebar: ikon, grup lipat, drawer mobile ---------- */
+function svgIcon(paths) {
+  return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+}
+var NAV_ICONS = {
+  home: svgIcon('<path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/>'),
+  snippets: svgIcon('<path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/>'),
+  dasar: svgIcon('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/>'),
+  routing: svgIcon('<circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8 8l6 6M18 6l-2 4M6 18l4-2"/>'),
+  firewall: svgIcon('<path d="M12 3l7 3v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6z"/><path d="M9 12l2 2 4-4"/>'),
+  queue: svgIcon('<path d="M4 7h16M4 12h16M4 17h10"/>'),
+  hotspot: svgIcon('<path d="M2.5 9a15 15 0 0 1 19 0M5.5 12.5a10 10 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/>'),
+  vpn: svgIcon('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+  ipv6: svgIcon('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18"/>'),
+  wireless: svgIcon('<path d="M12 20h.01M8.5 16.5a5 5 0 0 1 7 0M5.5 13a9.5 9.5 0 0 1 13 0M2.5 9.5a14 14 0 0 1 19 0"/>'),
+  container: svgIcon('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>'),
+  kalkulator: svgIcon('<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 7h6M9 12h.01M12 12h.01M15 12h.01M9 15.5h.01M12 15.5h.01M15 15.5h.01"/>'),
+  wizard: svgIcon('<path d="M5 4h14M5 9h14M5 14h9"/><path d="M16 15l2 2 4-4"/>'),
+  template: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 20V9"/>')
+};
+var navGroups = store('rr-nav-groups', {});
+function navGroupCollapsed(key) { return navGroups[key] === true; }
+function buildSidebar() {
   var h = location.hash || '#/';
   var active = 'home';
   if (h === '#/snippets') { active = 'snippets'; }
   else if (h.indexOf('#/kategori/') === 0) { active = h.slice('#/kategori/'.length); }
   else if (h.indexOf('#/tool/') === 0) { var tl = byId(h.slice('#/tool/'.length)); if (tl) { active = tl.cat; } }
-  var html = '<a class="chip' + (active === 'home' ? ' active' : '') + '" href="#/">' + esc(t('home')) + '</a>';
+  function item(href, key, icon, label, count) {
+    return '<li><a class="nav-item' + (active === key ? ' active' : '') + '" href="' + href + '" aria-current="' + (active === key ? 'page' : 'false') + '">' +
+      NAV_ICONS[icon] + '<span class="nav-label">' + esc(label) + '</span>' +
+      (count !== undefined ? '<span class="nav-count">' + count + '</span>' : '') + '</a></li>';
+  }
+  function group(key, title, inner) {
+    var collapsed = navGroupCollapsed(key);
+    return '<div class="nav-group' + (collapsed ? ' collapsed' : '') + '" data-group="' + key + '">' +
+      '<button type="button" class="nav-group-head" data-group-head="' + key + '" aria-expanded="' + (!collapsed) + '">' + esc(title) +
+      '<svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
+      '<ul class="nav-items">' + inner + '</ul></div>';
+  }
+  var menuItems = item('#/', 'home', 'home', t('home')) + item('#/snippets', 'snippets', 'snippets', t('snippets'), RR.snippets.length);
+  var catItems = '';
   RR.cats.forEach(function (c) {
     var n = RR.tools.filter(function (x) { return x.cat === c.id; }).length;
-    html += '<a class="chip' + (active === c.id ? ' active' : '') + '" href="#/kategori/' + c.id + '">' + esc(catName(c)) + '<span class="chip-n">' + n + '</span></a>';
+    catItems += item('#/kategori/' + c.id, c.id, c.id, catName(c), n);
   });
-  html += '<a class="chip' + (active === 'snippets' ? ' active' : '') + '" href="#/snippets">' + esc(t('snippets')) + '<span class="chip-n">' + RR.snippets.length + '</span></a>';
-  $chipBar.innerHTML = html;
+  $sideNav.innerHTML = group('menu', t('navMenu'), menuItems) + group('kategori', t('navCats'), catItems);
+  $sideNav.querySelectorAll('[data-group-head]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var key = btn.getAttribute('data-group-head');
+      var g = $sideNav.querySelector('[data-group="' + key + '"]');
+      var now = g.classList.toggle('collapsed');
+      btn.setAttribute('aria-expanded', now ? 'false' : 'true');
+      navGroups[key] = now;
+      save('rr-nav-groups', navGroups);
+    });
+  });
 }
+
+function openDrawer() {
+  $sidebar.classList.add('open');
+  $scrim.hidden = false;
+  document.body.classList.add('drawer-open');
+  $menuBtn.setAttribute('aria-expanded', 'true');
+  document.getElementById('sideClose').focus();
+}
+function closeDrawer() {
+  if (!$sidebar.classList.contains('open')) { return; }
+  $sidebar.classList.remove('open');
+  $scrim.hidden = true;
+  document.body.classList.remove('drawer-open');
+  $menuBtn.setAttribute('aria-expanded', 'false');
+  $menuBtn.focus();
+}
+$menuBtn.addEventListener('click', openDrawer);
+document.getElementById('sideClose').addEventListener('click', closeDrawer);
+$scrim.addEventListener('click', closeDrawer);
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { closeDrawer(); }
+});
 
 /* ---------- Potongan tampilan bersama ---------- */
 function favBtnHtml(tool) {
@@ -575,7 +645,8 @@ function renderTool(id) {
 /* ---------- Router ---------- */
 function route() {
   var h = location.hash || '#/';
-  buildChips();
+  buildSidebar();
+  closeDrawer();
   if (h === '#/' || h === '#' || h === '') { renderHome(); }
   else if (h === '#/snippets') { renderSnippets(); }
   else if (h.indexOf('#/kategori/') === 0) { renderCategory(h.slice('#/kategori/'.length)); }
@@ -590,7 +661,7 @@ window.addEventListener('hashchange', route);
 /* ---------- Mulai ---------- */
 applyTheme();
 applyLangStatic();
-buildChips();
+buildSidebar();
 route();
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
   navigator.serviceWorker.register('sw.js').catch(function () { /* situs tetap jalan tanpa service worker */ });

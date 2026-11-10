@@ -362,6 +362,128 @@ TOOLS.push(T('kid-control', 'dasar', 'Kid Control', 'Kid Control',
     ];
   }));
 
+TOOLS.push(T('add-admin-user', 'dasar', 'Add Admin User', 'Add Admin User',
+  'Buat pengguna router baru dengan grup akses sendiri, misalnya akun teknisi yang berbeda dari admin utama.',
+  [
+    f('user', 'Nama pengguna baru', 'text', 'admin-baru', { mono: 1, help: 'Nama login untuk masuk Winbox atau terminal. Hindari spasi.' }),
+    f('pass', 'Password', 'text', 'GantiSaya123', { mono: 1, help: 'Pakai password panjang dan unik. Ganti lagi setelah akun dibuat bila password ini sempat terlihat orang lain.' }),
+    f('grup', 'Grup pengguna', 'select', 'full', { opts: [{ v: 'full', l: 'full (akses penuh)' }, { v: 'read', l: 'read (hanya baca)' }, { v: 'write', l: 'write (baca dan tulis)' }] }),
+    f('komen', 'Komentar', 'text', '', { opt: 1, ph: 'Teknisi lapangan' })
+  ],
+  function (v) {
+    var s = '/user add name=' + v.user + ' password=' + v.pass + ' group=' + v.grup;
+    if (v.komen) { s += ' comment=' + q(v.komen); }
+    return H('Add Admin User') + s + '\n';
+  },
+  function () {
+    return [
+      'Satu baris ini membuat akun pengguna baru lengkap dengan password dan grup aksesnya.',
+      'Grup full boleh mengubah apa pun, write boleh membaca dan mengubah tetapi tidak mengelola pengguna, sedangkan read hanya boleh melihat.',
+      'Peringatan praktis: jangan membagikan akun full ke banyak orang, buat satu akun per orang agar jejak perubahan di log bisa dilacak.'
+    ];
+  }));
+
+TOOLS.push(T('add-ip-pool', 'dasar', 'Add IP Pool', 'Add IP Pool',
+  'Buat pool alamat IP, yaitu rentang alamat yang siap dibagikan ke DHCP server, hotspot, atau PPPoE.',
+  [
+    f('nama', 'Nama pool', 'text', 'pool-tambahan', { mono: 1, help: 'Nama ini dipakai saat pool dipilih di DHCP server, hotspot, atau profil PPP.' }),
+    f('from', 'Alamat awal pool', 'ip', '192.168.88.100', { v: 'ip' }),
+    f('to', 'Alamat akhir pool', 'ip', '192.168.88.200', { v: 'ip' })
+  ],
+  function (v) {
+    return H('Add IP Pool') +
+      '/ip pool add name=' + v.nama + ' ranges=' + v.from + '-' + v.to + '\n';
+  },
+  function () {
+    return [
+      'Baris ini mendaftarkan satu rentang alamat dengan nama pool yang kamu isi.',
+      'Pool baru belum dipakai apa pun sampai kamu menunjuknya di DHCP server, hotspot, atau profil PPP.',
+      'Peringatan praktis: pastikan rentang pool tidak menabrak alamat statis seperti gateway, printer, atau access point.'
+    ];
+  }));
+
+TOOLS.push(T('auto-reboot', 'dasar', 'Auto Reboot', 'Auto Reboot',
+  'Jadwalkan reboot router secara berkala pada jam sepi, supaya memori segar dan layanan yang macet pulih sendiri.',
+  [
+    f('nama', 'Nama scheduler', 'text', 'reboot-otomatis', { mono: 1 }),
+    f('interval', 'Interval reboot', 'select', '7d', { opts: ['1d', '7d', '30d'] }),
+    f('mulai', 'Jam mulai (HH:MM:SS)', 'text', '03:00:00', { mono: 1, help: 'Pilih jam paling sepi, contoh dini hari saat tidak ada pengguna aktif.' })
+  ],
+  function (v) {
+    return H('Auto Reboot') +
+      '/system scheduler add name=' + v.nama + ' start-time=' + v.mulai + ' interval=' + v.interval + ' on-event="/system reboot" comment="Reboot berkala otomatis"\n';
+  },
+  function () {
+    return [
+      'Satu baris ini membuat jadwal yang menjalankan perintah reboot setiap interval yang kamu pilih, mulai dari jam yang kamu isi.',
+      'Reboot hanya memakan waktu sekitar satu menit, dan semua layanan kembali normal sendiri setelah router menyala lagi.',
+      'Peringatan praktis: pastikan jam router sudah benar lewat NTP, karena scheduler mengikuti jam router, dan jangan memilih jam sibuk bila ada pengguna yang sedang bekerja.'
+    ];
+  }));
+
+TOOLS.push(T('backup-export', 'dasar', 'Backup Export File .rsc', 'Backup Export File .rsc',
+  'Simpan konfigurasi router ke berkas teks .rsc dan cadangan biner, supaya bisa dipulihkan cepat bila router rusak atau salah konfigurasi.',
+  [
+    f('file', 'Nama berkas (tanpa ekstensi)', 'text', 'backup-router', { mono: 1, help: 'Berkas tersimpan di menu Files, contoh backup-router.rsc.' }),
+    f('hide', 'Sembunyikan data sensitif di ekspor', 'check', true, { help: 'Password dan kunci tidak ikut tertulis di berkas .rsc.' }),
+    f('biner', 'Buat juga backup biner (.backup)', 'check', true, { help: 'Cadangan biner memulihkan seluruh konfigurasi termasuk password.' })
+  ],
+  function (v) {
+    var s = H('Backup Export File .rsc') +
+      '/export file=' + v.file + (v.hide ? ' hide-sensitive' : '') + '\n';
+    if (v.biner) {
+      s += '/system backup save name=' + v.file + '\n';
+    }
+    return s;
+  },
+  function () {
+    return [
+      'Baris export menulis seluruh konfigurasi ke berkas .rsc yang bisa dibaca dan diedit sebagai teks.',
+      'Bila opsi sembunyikan sensitif aktif, password dan kunci tidak ikut tertulis, jadi berkas aman dibagikan ke teknisi lain.',
+      'Bila opsi biner aktif, baris kedua menyimpan cadangan biner yang memulihkan router persis seperti semula, termasuk password.',
+      'Peringatan praktis: unduh kedua berkas dari menu Files dan simpan di luar router, karena cadangan di dalam router ikut hilang bila perangkatnya rusak.'
+    ];
+  }));
+
+TOOLS.push(T('bootloader-protector', 'dasar', 'Bootloader Protector', 'Bootloader Protector',
+  'Kunci RouterBOOT supaya router tidak bisa di-boot dari perangkat lain dan tombol reset tidak bisa menghapus konfigurasi.',
+  [
+    f('aktif', 'Aktifkan proteksi RouterBOOT', 'check', true, { help: 'Bila dimatikan, perintah yang dihasilkan justru membuka kembali proteksinya.' })
+  ],
+  function (v) {
+    return H('Bootloader Protector') +
+      '/system routerboard settings set protected-routerboot=' + (v.aktif ? 'yes' : 'no') + '\n';
+  },
+  function () {
+    return [
+      'Satu baris ini menyalakan atau mematikan proteksi RouterBOOT, sesuai centang yang kamu isi.',
+      'Saat proteksi aktif, router hanya mau boot dari memori internalnya sendiri, jadi tidak bisa dibajak lewat Netinstall atau media boot lain.',
+      'Tombol reset juga kehilangan fungsinya untuk menghapus konfigurasi, sehingga pencuri yang memegang fisik router tidak bisa mereset password dengan mudah.',
+      'Peringatan praktis: bila kamu sendiri lupa password saat proteksi aktif, tombol reset tidak bisa menolongmu, jadi pastikan kamu masih bisa login dan sudah menyimpan backup sebelum mengaktifkan fitur ini.'
+    ];
+  }));
+
+TOOLS.push(T('clear-dns-flush', 'dasar', 'Clear DNS Flush', 'Clear DNS Flush',
+  'Kosongkan cache DNS router, supaya nama domain yang sudah berubah alamat langsung dijawab dengan alamat barunya.',
+  [
+    f('tampil', 'Tampilkan jumlah entri cache yang tersisa', 'check', false, { help: 'Menambahkan satu baris yang mencetak sisa entri cache setelah flush.' })
+  ],
+  function (v) {
+    var s = H('Clear DNS Flush') + '/ip dns cache flush\n';
+    if (v.tampil) {
+      s += ':put ("Sisa entri cache DNS: " . [:len [/ip dns cache find]])\n';
+    }
+    return s;
+  },
+  function () {
+    return [
+      'Baris pertama mengosongkan seluruh cache DNS, jadi pertanyaan berikutnya akan dijawab langsung dari server DNS, bukan dari simpanan lama.',
+      'Perintah ini berguna setelah pindah server DNS atau saat sebuah situs baru pindah hosting tetapi perangkat masih membuka alamat lamanya.',
+      'Bila opsi tampil dicentang, baris kedua mencetak jumlah entri cache yang tersisa, biasanya nol, sebagai bukti flush sudah berjalan.',
+      'Peringatan praktis: sesaat setelah flush, membuka situs terasa sedikit lebih lambat karena cache harus dibangun ulang dari nol, tetapi itu normal dan hanya berlangsung sebentar.'
+    ];
+  }));
+
 /* ================= Kategori: Routing ================= */
 
 TOOLS.push(T('static-route', 'routing', 'Rute Statis', 'Static Route',
@@ -965,6 +1087,262 @@ TOOLS.push(T('pisah-game', 'firewall', 'Pisah Trafik Game dan Browsing', 'Split 
       'Queue tree membaca cap itu. Prioritas 1 berarti paket game selalu dilayani lebih dulu saat jalur penuh.',
       'Prioritas bukan menambah kecepatan total. Ia hanya menentukan siapa yang menunggu saat semua orang memakai internet bersamaan.',
       'Daftar port game adalah perkiraan awal. Bila game tertentu tetap tersendat, periksa port aslinya di dokumentasi game itu lalu tambahkan.'
+    ];
+  }));
+
+TOOLS.push(T('anti-ddos', 'firewall', 'Anti DDoS Attacks', 'Anti DDoS Attacks',
+  'Tahan banjir koneksi SYN dari internet: sumber yang membuka koneksi terlalu banyak dalam waktu singkat masuk daftar hitam sementara lalu trafiknya dibuang.',
+  [
+    f('batas', 'Batas koneksi per IP', 'number', 50, { v: 'num', min: 1, max: 1000, help: 'Jumlah koneksi bersamaan dari satu IP sebelum dianggap menyerang.' }),
+    f('list', 'Nama address-list penyerang', 'text', 'ddos-attackers', { mono: 1 }),
+    f('timeout', 'Lama IP masuk daftar hitam', 'text', '10m', { mono: 1, help: 'Format waktu RouterOS, contoh 10m, 1h, atau 1d.' }),
+    f('wan', 'Interface WAN', 'text', 'ether1', { mono: 1 })
+  ],
+  function (v) {
+    return H('Anti DDoS Attacks') +
+      '/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp connection-limit=' + v.batas + ',32 action=add-src-to-address-list address-list=' + v.list + ' address-list-timeout=' + v.timeout + ' comment="Tandai penyerang DDoS"\n' +
+      '/ip firewall filter add chain=input in-interface=' + v.wan + ' src-address-list=' + v.list + ' action=drop comment="Buang trafik penyerang DDoS"\n';
+  },
+  function () {
+    return [
+      'Aturan pertama menghitung koneksi TCP dari tiap IP di interface WAN, dan bila melewati batas, IP itu dicatat ke address-list selama durasi yang kamu isi.',
+      'Aturan kedua membuang semua paket dari IP yang sedang ada di daftar itu, jadi banjir berhenti membebani CPU router.',
+      'Peringatan praktis: batas yang terlalu kecil bisa memblokir pengguna sah di belakang satu IP publik yang sama, misalnya satu kantor atau satu warnet, jadi naikkan batasnya bila keluhan muncul.'
+    ];
+  }));
+
+TOOLS.push(T('anti-hack-exploit', 'firewall', 'Anti Hack Exploit (user.dat)', 'Anti Hack Exploit (user.dat)',
+  'Tutup semua pintu layanan kelola router dari arah internet, tetapi tetap buka untuk jaringan pengelola di LAN.',
+  [
+    f('wan', 'Interface WAN', 'text', 'ether1', { mono: 1 }),
+    f('lan', 'Jaringan pengelola (CIDR)', 'cidr', '192.168.88.0/24', { v: 'cidr', help: 'Hanya jaringan ini yang boleh membuka Winbox, SSH, dan WebFig.' })
+  ],
+  function (v) {
+    return H('Anti Hack Exploit (user.dat)') +
+      '/ip firewall filter add chain=input src-address=' + v.lan + ' protocol=tcp dst-port=8291,8728,8729,22,23,80,443 action=accept comment="Izinkan kelola router dari LAN"\n' +
+      '/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp dst-port=8291,8728,8729,22,23,80,443 action=drop comment="Tutup layanan kelola dari WAN"\n';
+  },
+  function () {
+    return [
+      'Aturan pertama mengizinkan jaringan pengelola membuka layanan kelola: Winbox 8291, API 8728, API-SSL 8729, SSH 22, Telnet 23, Web 80, dan Web-SSL 443.',
+      'Aturan kedua membuang semua percobaan dari interface WAN ke port yang sama, jadi pemindai dari internet tidak bisa mengetuk pintu router.',
+      'Aturan accept harus berada di atas aturan drop di daftar filter, dan urutan ini sudah dijaga oleh template di atas.',
+      'Peringatan praktis: bila kamu mengelola router dari luar lewat VPN atau IP publik lain, tambahkan jaringan itu ke aturan accept sebelum menjalankan script ini, atau kamu bisa terkunci dari router sendiri.'
+    ];
+  }));
+
+TOOLS.push(T('anti-hack-mikrotik', 'firewall', 'Anti Hack MikroTik', 'Anti Hack MikroTik',
+  'Pengerasan umum router: matikan layanan yang tidak dipakai, kunci Winbox ke jaringan LAN, dan batasi layanan tetangga jaringan.',
+  [
+    f('wan', 'Interface WAN', 'text', 'ether1', { mono: 1 }),
+    f('lan', 'Jaringan LAN (CIDR)', 'cidr', '192.168.88.0/24', { v: 'cidr', help: 'Jaringan yang diizinkan membuka Winbox.' }),
+    f('telnet', 'Matikan Telnet', 'check', true),
+    f('ftp', 'Matikan FTP', 'check', true),
+    f('api', 'Matikan API', 'check', true),
+    f('www', 'Matikan layanan Web (WebFig)', 'check', true)
+  ],
+  function (v) {
+    var s = H('Anti Hack MikroTik');
+    if (v.telnet) { s += '/ip service set telnet disabled=yes\n'; }
+    if (v.ftp) { s += '/ip service set ftp disabled=yes\n'; }
+    if (v.api) { s += '/ip service set api disabled=yes\n'; }
+    if (v.www) { s += '/ip service set www disabled=yes\n'; }
+    s += '/ip service set winbox address=' + v.lan + '\n' +
+      '/tool bandwidth-server set enabled=no\n' +
+      '/tool mac-server set allowed-interface-list=LAN\n' +
+      '/tool mac-server mac-winbox set allowed-interface-list=LAN\n' +
+      '/ip neighbor discovery-settings set discover-interface-list=LAN\n' +
+      '/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp dst-port=21,22,23,80,443,8291,8728,8729 action=drop comment="Blokir layanan kelola dari WAN"\n';
+    return s;
+  },
+  function () {
+    return [
+      'Baris pertama sampai keempat mematikan layanan IP yang kamu centang, jadi pintu masuk yang tidak dipakai tidak lagi bisa diketuk dari mana pun.',
+      'Winbox kemudian hanya menerima koneksi dari jaringan LAN yang kamu isi, sehingga login dari internet tertutup.',
+      'Bandwidth server dimatikan dan MAC server dibatasi ke interface LAN, jadi alat ukur dan login lewat MAC address tidak bisa dipakai dari arah WAN.',
+      'Neighbor discovery juga dibatasi ke LAN, supaya router tidak mengumumkan dirinya ke perangkat di luar jaringan lokal.',
+      'Baris terakhir adalah jaring pengaman: aturan firewall yang membuang percobaan masuk ke port layanan kelola dari interface WAN, jadi kalaupun sebuah layanan diaktifkan lagi suatu hari, pintu dari internet tetap tertutup.',
+      'Peringatan praktis: mematikan layanan Web berarti WebFig ikut mati, dan mematikan API memutus aplikasi yang memakai API MikroTik, jadi centang hanya layanan yang memang tidak kamu pakai.'
+    ];
+  }));
+
+TOOLS.push(T('anti-netcut', 'firewall', 'Anti Netcut', 'Anti Netcut',
+  'Cegah pemutusan dan pembajakan koneksi lewat ARP palsu: bridge hanya menerima jawaban ARP dari alamat yang sudah tercatat.',
+  [
+    f('bridge', 'Nama bridge LAN', 'text', 'bridge-lan', { mono: 1 }),
+    f('gw', 'Alamat IP gateway', 'ip', '192.168.88.1', { v: 'ip' }),
+    f('mac', 'MAC address gateway', 'text', 'AA:BB:CC:11:22:33', { mono: 1, help: 'Lihat di menu IP lalu ARP, atau di stiker perangkat gateway.' })
+  ],
+  function (v) {
+    return H('Anti Netcut') +
+      '/interface bridge set ' + v.bridge + ' arp=reply-only\n' +
+      '/ip dhcp-server set [find interface=' + v.bridge + '] add-arp=yes\n' +
+      '/ip arp add address=' + v.gw + ' mac-address=' + v.mac + ' interface=' + v.bridge + ' comment="Gateway statis anti netcut"\n';
+  },
+  function () {
+    return [
+      'Baris pertama mengubah bridge ke mode reply-only, artinya router hanya membalas ARP untuk alamat IP yang sudah tercatat di tabel ARP.',
+      'Baris kedua membuat DHCP server otomatis mencatat entri ARP setiap kali memberi lease, jadi klien DHCP tetap terhubung tanpa pengaturan manual.',
+      'Baris ketiga mencatat gateway secara permanen, supaya alamat gateway tidak bisa dibajak oleh perangkat lain yang mengaku sebagai gateway.',
+      'Peringatan praktis: perangkat dengan IP statis yang tidak punya entri ARP akan kehilangan koneksi sampai kamu menambahkan entri ARP statis untuknya, jadi catat dulu semua IP statis sebelum menjalankan script ini.'
+    ];
+  }));
+
+TOOLS.push(T('anti-ping-wan', 'firewall', 'Anti-Ping WAN', 'Anti-Ping WAN',
+  'Sembunyikan router dari pemindai internet dengan menolak ping ICMP echo yang datang dari WAN.',
+  [
+    f('wan', 'Interface WAN', 'text', 'ether1', { mono: 1 }),
+    f('forward', 'Tolak juga ping yang diteruskan ke LAN (chain forward)', 'check', false, { help: 'Aktifkan bila perangkat LAN juga tidak boleh di-ping dari internet.' })
+  ],
+  function (v) {
+    var s = H('Anti-Ping WAN') +
+      '/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=icmp icmp-options=8:0 action=drop comment="Tolak ping dari WAN"\n';
+    if (v.forward) {
+      s += '/ip firewall filter add chain=forward in-interface=' + v.wan + ' protocol=icmp icmp-options=8:0 action=drop comment="Tolak ping terusan dari WAN"\n';
+    }
+    return s;
+  },
+  function () {
+    return [
+      'Aturan pertama membuang paket ping (ICMP echo request) yang ditujukan ke router sendiri dari interface WAN, sehingga pemindai mengira tidak ada perangkat di alamat itu.',
+      'Bila opsi forward dicentang, aturan kedua ikut membuang ping yang diteruskan menuju perangkat di LAN.',
+      'Peringatan praktis: setelah aturan ini aktif, kamu tidak bisa lagi menguji koneksi internet dengan ping ke IP publik router dari luar, pakai ping dari dalam LAN atau cek lewat log sebagai gantinya.'
+    ];
+  }));
+
+TOOLS.push(T('block-modem', 'firewall', 'Block Access Modem', 'Block Access Modem',
+  'Larang perangkat di LAN membuka halaman admin modem, supaya tidak ada yang mengubah setelan modem sembarangan.',
+  [
+    f('modem', 'Alamat IP modem', 'ip', '192.168.1.1', { v: 'ip' }),
+    f('port', 'Port admin modem', 'select', '80,443', { opts: [{ v: '80,443', l: '80 dan 443 (HTTP dan HTTPS)' }, { v: '80', l: '80 (HTTP saja)' }, { v: '443', l: '443 (HTTPS saja)' }] }),
+    f('src', 'Jaringan sumber (CIDR)', 'cidr', '192.168.88.0/24', { v: 'cidr', help: 'Jaringan klien yang dilarang, biasanya seluruh LAN.' })
+  ],
+  function (v) {
+    return H('Block Access Modem') +
+      '/ip firewall filter add chain=forward src-address=' + v.src + ' dst-address=' + v.modem + ' protocol=tcp dst-port=' + v.port + ' action=drop comment="Blokir akses admin modem"\n';
+  },
+  function () {
+    return [
+      'Satu aturan ini membuang paket dari jaringan sumber menuju alamat IP modem pada port admin yang dipilih.',
+      'Chain forward dipakai karena paketnya hanya lewat router menuju modem, bukan ditujukan ke router sendiri.',
+      'Peringatan praktis: aturan ini juga memblokir kamu sendiri bila kamu berada di jaringan sumber itu, jadi jalankan perubahan modem dari jaringan lain atau nonaktifkan dulu aturan ini sementara.'
+    ];
+  }));
+
+TOOLS.push(T('block-ip', 'firewall', 'Block IP Address', 'Block IP Address',
+  'Masukkan satu alamat IP ke daftar blokir lalu buang semua trafiknya, cara cepat menghentikan pengganggu yang sudah diketahui alamatnya.',
+  [
+    f('addr', 'Alamat IP yang diblokir (CIDR)', 'cidr', '203.0.113.7/32', { v: 'cidr', help: 'Pakai /32 untuk satu alamat, atau prefix lebih besar untuk satu jaringan.' }),
+    f('list', 'Nama address-list', 'text', 'blocked', { mono: 1 }),
+    f('chain', 'Chain firewall', 'select', 'forward', { opts: ['forward', 'input'] })
+  ],
+  function (v) {
+    return H('Block IP Address') +
+      '/ip firewall address-list add list=' + v.list + ' address=' + v.addr + ' comment="Alamat diblokir"\n' +
+      '/ip firewall filter add chain=' + v.chain + ' src-address-list=' + v.list + ' action=drop comment="Buang trafik dari daftar blokir"\n';
+  },
+  function () {
+    return [
+      'Baris pertama mencatat alamat yang kamu isi ke address-list, jadi alamat lain bisa ditambahkan ke daftar yang sama tanpa membuat aturan baru.',
+      'Baris kedua membuang semua paket dari alamat yang ada di daftar itu pada chain yang kamu pilih.',
+      'Chain forward memblokir trafik yang lewat menuju internet atau LAN lain, sedangkan chain input memblokir trafik yang ditujukan ke router sendiri.',
+      'Peringatan praktis: periksa alamatnya dua kali sebelum menjalankan, karena salah ketik satu angka bisa memblokir pelanggan atau server yang sah.'
+    ];
+  }));
+
+TOOLS.push(T('block-mac', 'firewall', 'Block MAC Address', 'Block MAC Address',
+  'Blokir satu perangkat berdasarkan MAC address-nya, berguna bila perangkat itu terus mengganti alamat IP.',
+  [
+    f('mac', 'Alamat MAC yang diblokir', 'text', 'AA:BB:CC:11:22:33', { mono: 1, help: 'Format enam pasang heksadesimal dipisah titik dua, contoh AA:BB:CC:11:22:33.' }),
+    f('komen', 'Komentar', 'text', '', { opt: 1, ph: 'Perangkat tidak dikenal' })
+  ],
+  function (v) {
+    var s = '/ip firewall filter add chain=forward src-mac-address=' + v.mac + ' action=drop';
+    if (v.komen) { s += ' comment=' + q(v.komen); }
+    return H('Block MAC Address') + s + '\n';
+  },
+  function () {
+    return [
+      'Satu aturan ini membuang semua paket yang dikirim perangkat dengan MAC address yang kamu isi, di chain forward.',
+      'Karena yang dicek adalah MAC address perangkat, aturan ini tetap bekerja walaupun perangkat itu berganti IP lewat DHCP.',
+      'Peringatan praktis: MAC address bisa dipalsukan dengan mudah, jadi aturan ini cocok untuk perangkat nakal di jaringan sendiri, bukan untuk pertahanan serius dari internet.'
+    ];
+  }));
+
+TOOLS.push(T('block-proxy', 'firewall', 'Block Open PROXY', 'Block Open PROXY',
+  'Tutup port proxy umum supaya pengguna tidak bisa lolos dari filter atau pembatasan lewat proxy luar.',
+  [
+    f('ports', 'Daftar port proxy', 'text', '8080,3128,1080,8118', { mono: 1, help: 'Pisahkan dengan koma. 8080 dan 3128 proxy HTTP umum, 1080 SOCKS, 8118 Privoxy.' }),
+    f('chain', 'Chain firewall', 'select', 'forward', { opts: ['forward', 'input'] }),
+    f('proto', 'Protokol', 'select', 'tcp', { opts: ['tcp', 'udp'] })
+  ],
+  function (v) {
+    return H('Block Open PROXY') +
+      '/ip firewall filter add chain=' + v.chain + ' protocol=' + v.proto + ' dst-port=' + v.ports + ' action=drop comment="Blokir port proxy umum"\n';
+  },
+  function () {
+    return [
+      'Satu aturan ini membuang paket menuju port proxy yang kamu tulis, pada protokol dan chain yang dipilih.',
+      'Chain forward memblokir pengguna LAN yang mencoba memakai proxy di internet, sedangkan chain input memblokir pihak luar yang mencoba memakai router sebagai proxy.',
+      'Peringatan praktis: beberapa aplikasi sah juga memakai port 8080, jadi bila ada aplikasi yang tiba-tiba tidak bisa terhubung, periksa dulu apakah portnya ikut terblokir di sini.'
+    ];
+  }));
+
+TOOLS.push(T('block-recursive-dns', 'firewall', 'Block Open Recursive DNS', 'Block Open Recursive DNS',
+  'Tolak query DNS dari internet ke router, supaya router tidak dipakai orang luar sebagai open resolver untuk serangan amplifikasi.',
+  [
+    f('wan', 'Interface WAN', 'text', 'ether1', { mono: 1 })
+  ],
+  function (v) {
+    return H('Block Open Recursive DNS') +
+      '/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=udp dst-port=53 action=drop comment="Tolak query DNS UDP dari WAN"\n' +
+      '/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp dst-port=53 action=drop comment="Tolak query DNS TCP dari WAN"\n';
+  },
+  function () {
+    return [
+      'Aturan pertama membuang query DNS lewat UDP port 53 yang datang dari interface WAN.',
+      'Aturan kedua melakukan hal yang sama untuk DNS lewat TCP port 53, karena DNS modern juga memakai TCP.',
+      'Chain input dipakai karena query ini ditujukan ke router sendiri, bukan diteruskan ke perangkat lain.',
+      'Peringatan praktis: aturan ini hanya menutup pintu dari WAN, perangkat LAN tetap bisa memakai router sebagai DNS seperti biasa, jadi jangan heran bila tes dari dalam LAN masih menjawab.'
+    ];
+  }));
+
+TOOLS.push(T('block-port', 'firewall', 'Block Port', 'Block Port',
+  'Tutup satu atau beberapa port rawan, misalnya port berbagi file Windows yang sering dipakai worm untuk menyebar di jaringan lokal.',
+  [
+    f('ports', 'Daftar port yang diblokir', 'text', '135,137-139,445', { mono: 1, help: 'Pisahkan dengan koma, rentang ditulis dengan tanda hubung, contoh 135,137-139,445.' }),
+    f('proto', 'Protokol', 'select', 'tcp', { opts: ['tcp', 'udp'] }),
+    f('chain', 'Chain firewall', 'select', 'forward', { opts: ['forward', 'input'] })
+  ],
+  function (v) {
+    return H('Block Port') +
+      '/ip firewall filter add chain=' + v.chain + ' protocol=' + v.proto + ' dst-port=' + v.ports + ' action=drop comment="Blokir port rawan"\n';
+  },
+  function () {
+    return [
+      'Satu aturan ini membuang paket menuju port yang kamu tulis, pada protokol dan chain yang dipilih.',
+      'Nilai bawaan menutup port 135, 137 sampai 139, dan 445, yaitu port layanan berbagi file Windows yang paling sering dipakai worm dan ransomware.',
+      'Peringatan praktis: menutup port 445 antar perangkat LAN akan mematikan berbagi file dan printer Windows di jaringan lokal, jadi pakai chain input bila hanya ingin menutupnya dari arah internet.'
+    ];
+  }));
+
+TOOLS.push(T('bypass-local', 'firewall', 'Bypass Local Traffic', 'Bypass Local Traffic',
+  'Beri jalan bebas untuk trafik antar perangkat di jaringan lokal yang sama, supaya tidak ikut tersaring aturan blokir di bawahnya.',
+  [
+    f('lan', 'Jaringan lokal (CIDR)', 'cidr', '192.168.88.0/24', { v: 'cidr' }),
+    f('komen', 'Komentar', 'text', 'Trafik lokal', { opt: 1 })
+  ],
+  function (v) {
+    var s = '/ip firewall filter add chain=forward src-address=' + v.lan + ' dst-address=' + v.lan + ' action=accept';
+    if (v.komen) { s += ' comment=' + q(v.komen); }
+    return H('Bypass Local Traffic') + s + '\n';
+  },
+  function () {
+    return [
+      'Satu aturan ini menerima semua paket yang sumber dan tujuannya sama-sama berada di jaringan lokal yang kamu isi.',
+      'Karena firewall memproses aturan dari atas ke bawah, aturan ini harus diletakkan di atas aturan blokir, kalau tidak, trafik lokal keburu dibuang sebelum sampai ke aturan ini.',
+      'Aturan ini berguna di jaringan dengan beberapa segmen, misalnya antar gedung, supaya komunikasi internal tetap lancar sementara aturan blokir tetap menjaga pintu ke internet.',
+      'Peringatan praktis: aturan accept yang terlalu longgar bisa membuka celah, jadi batasi hanya ke jaringan lokal yang kamu isi, jangan ke alamat 0.0.0.0/0.'
     ];
   }));
 
