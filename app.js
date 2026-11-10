@@ -296,7 +296,20 @@ function renderHomeLists(query) {
       var hay = (tool.name.id + ' ' + tool.name.en + ' ' + tool.desc + ' ' + (c ? c.nameId + ' ' + c.nameEn : '')).toLowerCase();
       return hay.indexOf(query) !== -1;
     });
-    html = hasil.length ? toolListHtml(hasil) : '<p class="no-result">' + esc(t('noResult')) + '</p>';
+    var hasilDl = RR.downloads.filter(function (d) {
+      var hay = (d.name + ' ' + d.plat + ' ' + d.descId + ' ' + d.descEn).toLowerCase();
+      return hay.indexOf(query) !== -1;
+    });
+    if (hasil.length) { html += toolListHtml(hasil); }
+    if (hasilDl.length) {
+      html += '<section class="cat-block" aria-labelledby="dlsrch"><div class="cat-head"><span class="cat-tag">DL</span><h2 id="dlsrch">' + esc(t('downloads')) + '</h2>' +
+        '<span class="cat-note">' + hasilDl.length + ' ' + esc(t('toolsCount')) + '</span></div><ul class="tool-list">' +
+        hasilDl.map(function (d) {
+          return '<li class="tool-row"><div class="tool-row-inner"><a class="tool-link" href="#/unduhan"><span class="tool-name">' + esc(d.name) + '</span>' +
+            '<span class="tool-desc">' + esc(lang === 'en' ? d.descEn : d.descId) + '</span></a></div></li>';
+        }).join('') + '</ul></section>';
+    }
+    if (!hasil.length && !hasilDl.length) { html = '<p class="no-result">' + esc(t('noResult')) + '</p>'; }
   } else {
     var favs = getFavs().map(byId).filter(Boolean);
     html += '<section class="cat-block" aria-labelledby="favh"><div class="cat-head"><span class="cat-tag">FAV</span><h2 id="favh">' + esc(t('favs')) + '</h2></div>' +
