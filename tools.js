@@ -269,7 +269,7 @@ TOOLS.push(T('telegram-reporter', 'dasar', 'Laporan Router ke Telegram', 'Router
   ],
   function (v) {
     var lines = [
-      '/system script add name=lapor-tele policy=read,write,test source={',
+      '/system script add name=laporan-telegram policy=read,write,test source={',
       '  :local token "' + v.token + '";',
       '  :local chatid "' + v.chat + '";',
       '  :local teks ("LAPORAN ROUTER\\n");',
@@ -284,7 +284,7 @@ TOOLS.push(T('telegram-reporter', 'dasar', 'Laporan Router ke Telegram', 'Router
     lines.push('  :local encoded [:convert $teks to=url];');
     lines.push('  /tool fetch url=("https://api.telegram.org/bot" . $token . "/sendMessage") http-method=post http-data=("chat_id=" . $chatid . "&text=" . $encoded) output=none;');
     lines.push('}');
-    lines.push('/system scheduler add name=jadwal-lapore interval=' + v.jadwal + ' on-event="/system script run lapor-tele" comment="Laporan Router Telegram"');
+    lines.push('/system scheduler add name=jadwal-laporan interval=' + v.jadwal + ' on-event="/system script run laporan-telegram" comment="Laporan Router Telegram"');
     return H('Laporan Router ke Telegram') + lines.join('\n') + '\n';
   },
   function () {
