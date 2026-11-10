@@ -264,28 +264,35 @@ TOOLS.push(T('telegram-reporter', 'dasar', 'Laporan Router ke Telegram', 'Router
   [
     f('token', 'Token bot Telegram', 'text', '', { mono: 1, help: 'Dapat dari @BotFather. Token ini rahasia, jangan bagikan berkas script hasil unduhan.' }),
     f('chat', 'Chat ID tujuan', 'text', '', { mono: 1, ph: '123456789', help: 'ID chat kamu atau grup tempat bot berada.' }),
-    f('jadwal', 'Jeda pengiriman laporan', 'select', '6h', { opts: ['1h', '6h', '12h', '1d'] }),
+    f('jadwal', 'Jeda pengiriman laporan', 'select', '6h', { opts: ['1m', '5m', '30m', '1h', '6h', '12h', '1d'] }),
     f('hotspot', 'Sertakan jumlah pengguna hotspot aktif', 'check', false)
   ],
   function (v) {
     var lines = [
-      '/system script add name=laporan-telegram policy=read,write,test source={',
-      '  :local teks ("Laporan " . [/system identity get name] . "%0A" . "Uptime: " . [/system resource get uptime] . "%0A" . "CPU: " . [/system resource get cpu-load] . " persen%0A" . "Memori bebas: " . ([/system resource get free-memory] / 1048576) . " MB");'
+      '/system script add name=lapor-tele policy=read,write,test source={',
+      '  :local token "' + v.token + '";',
+      '  :local chatid "' + v.chat + '";',
+      '  :local teks ("LAPORAN ROUTER\\n");',
+      '  :set teks ($teks . "Router: " . [/system identity get name] . "\\n");',
+      '  :set teks ($teks . "Uptime: " . [/system resource get uptime] . "\\n");',
+      '  :set teks ($teks . "CPU: " . [/system resource get cpu-load] . "%\\n");',
+      '  :set teks ($teks . "Memori bebas: " . ([/system resource get free-memory] / 1048576) . " MB");'
     ];
     if (v.hotspot) {
-      lines.push('  :set teks ($teks . "%0A" . "Pengguna hotspot aktif: " . [:len [/ip hotspot active find]]);');
+      lines.push('  :set teks ($teks . "\\n" . "Hotspot aktif: " . [:len [/ip hotspot active find]]);');
     }
-    lines.push('  /tool fetch url=("https://api.telegram.org/bot' + v.token + '/sendMessage?chat-id=' + v.chat + '&text=" . $teks) keep-result=no;');
+    lines.push('  :local encoded [:convert $teks to=url];');
+    lines.push('  /tool fetch url=("https://api.telegram.org/bot" . $token . "/sendMessage") http-method=post http-data=("chat_id=" . $chatid . "&text=" . $encoded) output=none;');
     lines.push('}');
-    lines.push('/system scheduler add name=jadwal-laporan interval=' + v.jadwal + ' on-event=laporan-telegram comment="Laporan berkala ke Telegram"');
+    lines.push('/system scheduler add name=jadwal-lapore interval=' + v.jadwal + ' on-event="/system script run lapor-tele" comment="Laporan Router Telegram"');
     return H('Laporan Router ke Telegram') + lines.join('\n') + '\n';
   },
   function () {
     return [
-      'Script membaca uptime, beban CPU, dan sisa memori router, lalu merangkainya menjadi satu pesan.',
-      'Pesan dikirim memakai API bot Telegram. Router harus bisa mencapai internet agar pengiriman berhasil.',
-      'Scheduler mengulang pengiriman sesuai jeda pilihanmu.',
-      'Pastikan nama identitas router tidak memakai spasi, karena pesan dikirim sebagai bagian dari URL.'
+      'Script membaca nama router, uptime, beban CPU, dan sisa memori, lalu merangkainya menjadi satu pesan.',
+      'Pesan dikirim memakai API bot Telegram dengan metode POST. Isi pesan di encode dulu memakai convert to url, jadi spasi dan karakter khusus pada nama router tidak merusak pengiriman.',
+      'Parameter tujuan memakai nama chat_id, sesuai yang diminta API Telegram.',
+      'Scheduler menjalankan script ini sesuai jeda pilihanmu. Router harus bisa mencapai internet agar pengiriman berhasil.'
     ];
   }));
 
@@ -311,7 +318,7 @@ TOOLS.push(T('watchdog-auto', 'dasar', 'Watchdog Pemulihan Otomatis', 'Automatic
       '    /interface set disabled=yes [find name=' + q(v.iface) + '];\n' +
       '    :delay 5s;\n' +
       '    /interface set disabled=no [find name=' + q(v.iface) + '];\n' +
-      '    /tool fetch url=("https://api.telegram.org/bot' + v.token + '/sendMessage?chat-id=' + v.chat + '&text=Watchdog%20menyalakan%20ulang%20' + v.iface + '") keep-result=no;\n' +
+      '    /tool fetch url=("https://api.telegram.org/bot' + v.token + '/sendMessage?chat_id=' + v.chat + '&text=Watchdog%20menyalakan%20ulang%20' + v.iface + '") output=none;\n' +
       '    :set wdGagal 0;\n' +
       '  }\n' +
       '}\n' +
@@ -2298,7 +2305,7 @@ var SNIPPETS = [
   {
     judul: 'Kirim 10 baris log terakhir ke Telegram',
     desc: 'Jalankan manual dari terminal atau jadikan script berkala. Ganti TOKENBOT dan IDCHAT dengan milikmu.',
-    kode: ':local isi "";\n:local total [:len [/log find]];\n:local mulai ($total - 10);\n:if ($mulai < 0) do={ :set mulai 0 }\n:foreach i in=[/log find] do={\n  :set isi ($isi . "%0A" . [/log get $i message]);\n}\n/tool fetch url=("https://api.telegram.org/botTOKENBOT/sendMessage?chat-id=IDCHAT&text=Log%20terbaru:" . $isi) keep-result=no;'
+    kode: ':local isi "";\n:local total [:len [/log find]];\n:local mulai ($total - 10);\n:if ($mulai < 0) do={ :set mulai 0 }\n:foreach i in=[/log find] do={\n  :set isi ($isi . "%0A" . [/log get $i message]);\n}\n/tool fetch url=("https://api.telegram.org/botTOKENBOT/sendMessage?chat_id=IDCHAT&text=Log%20terbaru:" . $isi) output=none;'
   },
   {
     judul: 'Pisahkan log DHCP ke berkas sendiri',
@@ -2313,7 +2320,7 @@ var SNIPPETS = [
   {
     judul: 'Laporan ke Telegram setiap ada pelanggan PPPoE tersambung',
     desc: 'Tempelkan sebagai on-up pada profil PPPoE. Ganti TOKENBOT, IDCHAT, dan nama profil dengan milikmu.',
-    kode: '/ppp profile set [find name="profil-pppoe"] on-up={/tool fetch url=("https://api.telegram.org/botTOKENBOT/sendMessage?chat-id=IDCHAT&text=PPPoE%20tersambung:%20" . $user . "%20dari%20" . $"remote-address") keep-result=no}'
+    kode: '/ppp profile set [find name="profil-pppoe"] on-up={/tool fetch url=("https://api.telegram.org/botTOKENBOT/sendMessage?chat_id=IDCHAT&text=PPPoE%20tersambung:%20" . $user . "%20dari%20" . $"remote-address") output=none}'
   },
   {
     judul: 'Failover sederhana dengan Netwatch',
