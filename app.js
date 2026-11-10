@@ -43,7 +43,10 @@ var I18N = {
   id: {
     brandSub: 'Generator script MikroTik', sideFoot: 'Semua proses berjalan di browser kamu. Tidak ada data yang dikirim ke server mana pun.',
     footText: 'Script diracik dari isian kamu, jalankan di RouterOS v7 setelah kamu periksa. Situs ini tidak berafiliasi dengan MikroTik.',
-    home: 'Beranda', snippets: 'Database Script', searchPh: 'Cari tool, misalnya failover, hotspot, wireguard, subnet...',
+    home: 'Beranda', snippets: 'Database Script', downloads: 'Unduhan Resmi',
+    dlSub: 'Tautan unduh aplikasi dan berkas resmi MikroTik, lengkap dengan penjelasan singkat. Berkasnya datang langsung dari server MikroTik, RacikRouter tidak menyimpan salinannya.',
+    dlHomeNote: 'WinBox, Netinstall, The Dude, CHR, dan aplikasi resmi MikroTik lainnya, semua dari sumber aslinya.',
+    dlOpen: 'Buka Unduhan Resmi', searchPh: 'Cari tool, misalnya failover, hotspot, wireguard, subnet...',
     searchShort: 'Cari tool...',
     homeTitle: 'Racik script MikroTik tanpa mengetik dari nol',
     homeSub: 'Pilih tool, isi kolomnya, script RouterOS v7 langsung jadi dan berubah mengikuti isianmu. Salin ke terminal, atau unduh sebagai berkas .rsc.',
@@ -66,7 +69,10 @@ var I18N = {
   en: {
     brandSub: 'MikroTik script generator', sideFoot: 'Everything runs in your browser. No data is sent to any server.',
     footText: 'Scripts are built from your input, run them on RouterOS v7 after reviewing. This site is not affiliated with MikroTik.',
-    home: 'Home', snippets: 'Script Database', searchPh: 'Search tools, e.g. failover, hotspot, wireguard, subnet...',
+    home: 'Home', snippets: 'Script Database', downloads: 'Official Downloads',
+    dlSub: 'Download links for official MikroTik apps and files, each with a short explanation. Files come straight from MikroTik servers, RacikRouter keeps no copies.',
+    dlHomeNote: 'WinBox, Netinstall, The Dude, CHR, and other official MikroTik apps, all from their original source.',
+    dlOpen: 'Open Official Downloads', searchPh: 'Search tools, e.g. failover, hotspot, wireguard, subnet...',
     searchShort: 'Search tools...',
     homeTitle: 'Build MikroTik scripts without typing from scratch',
     homeSub: 'Pick a tool, fill the form, and the RouterOS v7 script appears instantly and follows your input. Copy it to a terminal, or download it as an .rsc file.',
@@ -161,6 +167,7 @@ function svgIcon(paths) {
 var NAV_ICONS = {
   home: svgIcon('<path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/>'),
   snippets: svgIcon('<path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/>'),
+  unduhan: svgIcon('<path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4 19h16"/>'),
   dasar: svgIcon('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/>'),
   routing: svgIcon('<circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8 8l6 6M18 6l-2 4M6 18l4-2"/>'),
   firewall: svgIcon('<path d="M12 3l7 3v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6z"/><path d="M9 12l2 2 4-4"/>'),
@@ -180,6 +187,7 @@ function buildSidebar() {
   var h = location.hash || '#/';
   var active = 'home';
   if (h === '#/snippets') { active = 'snippets'; }
+  else if (h === '#/unduhan') { active = 'unduhan'; }
   else if (h.indexOf('#/kategori/') === 0) { active = h.slice('#/kategori/'.length); }
   else if (h.indexOf('#/tool/') === 0) { var tl = byId(h.slice('#/tool/'.length)); if (tl) { active = tl.cat; } }
   function item(href, key, icon, label, count) {
@@ -194,7 +202,7 @@ function buildSidebar() {
       '<svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
       '<ul class="nav-items">' + inner + '</ul></div>';
   }
-  var menuItems = item('#/', 'home', 'home', t('home')) + item('#/snippets', 'snippets', 'snippets', t('snippets'), RR.snippets.length);
+  var menuItems = item('#/', 'home', 'home', t('home')) + item('#/snippets', 'snippets', 'snippets', t('snippets'), RR.snippets.length) + item('#/unduhan', 'unduhan', 'unduhan', t('downloads'), RR.downloads.length);
   var catItems = '';
   RR.cats.forEach(function (c) {
     var n = RR.tools.filter(function (x) { return x.cat === c.id; }).length;
@@ -300,6 +308,10 @@ function renderHomeLists(query) {
       var list = RR.tools.filter(function (x) { return x.cat === c.id; });
       html += catBlockHtml(c, i, list);
     });
+    html += '<section class="cat-block" aria-labelledby="dlhomeh"><div class="cat-head"><span class="cat-tag">DL</span><h2 id="dlhomeh">' + esc(t('downloads')) + '</h2>' +
+      '<span class="cat-note">' + RR.downloads.length + ' ' + esc(t('toolsCount')) + '</span></div>' +
+      '<div style="margin-top:12px"><p class="empty-note">' + esc(t('dlHomeNote')) + '</p>' +
+      '<p style="margin-top:10px"><a class="btn" href="#/unduhan">' + ICON_DL + esc(t('dlOpen')) + '</a></p></div></section>';
   }
   box.innerHTML = html;
   bindFavButtons(box);
@@ -341,6 +353,39 @@ function renderSnippets() {
       copyText(RR.snippets[Number(i)].kode, document.getElementById('snip-note-' + i));
     });
   });
+}
+
+/* ---------- Halaman unduhan resmi ---------- */
+var DL_GROUPS = [
+  { id: 'desktop', idName: 'Aplikasi Desktop', enName: 'Desktop Apps' },
+  { id: 'mobile', idName: 'Aplikasi Mobile', enName: 'Mobile Apps' },
+  { id: 'sistem', idName: 'Sistem dan Berkas', enName: 'System and Files' }
+];
+function renderDownloads() {
+  currentRoute = 'unduhan';
+  document.body.classList.remove('has-actionbar');
+  document.title = t('downloads') + ', RacikRouter';
+  var html = '<a class="back-link" href="#/">' + esc(t('back')) + '</a>' +
+    '<div class="page-head"><h1>' + esc(t('downloads')) + '</h1><p>' + esc(t('dlSub')) + '</p></div>';
+  DL_GROUPS.forEach(function (g) {
+    var list = RR.downloads.filter(function (d) { return d.g === g.id; });
+    if (!list.length) { return; }
+    html += '<section class="cat-block" aria-labelledby="dlh-' + g.id + '"><div class="cat-head">' +
+      '<span class="cat-tag">' + esc(g.id.toUpperCase()) + '</span>' +
+      '<h2 id="dlh-' + g.id + '">' + esc(lang === 'en' ? g.enName : g.idName) + '</h2>' +
+      '<span class="cat-note">' + list.length + ' ' + esc(t('toolsCount')) + '</span></div><div class="dl-grid">';
+    list.forEach(function (d) {
+      html += '<article class="dl-card"><div class="dl-top"><h3>' + esc(d.name) + '</h3>' +
+        '<span class="cat-tag">' + esc(d.plat) + '</span></div>' +
+        '<p>' + esc(lang === 'en' ? d.descEn : d.descId) + '</p><div class="dl-links">';
+      d.links.forEach(function (lk, i) {
+        html += '<a class="btn' + (i === 0 ? ' btn-primary' : '') + '" href="' + esc(lk.url) + '" target="_blank" rel="noopener">' + ICON_DL + esc(lang === 'en' ? lk.lEn : lk.lId) + '</a>';
+      });
+      html += '</div></article>';
+    });
+    html += '</div></section>';
+  });
+  $view.innerHTML = html;
 }
 
 function copyText(text, noteEl) {
@@ -649,6 +694,7 @@ function route() {
   closeDrawer();
   if (h === '#/' || h === '#' || h === '') { renderHome(); }
   else if (h === '#/snippets') { renderSnippets(); }
+  else if (h === '#/unduhan') { renderDownloads(); }
   else if (h.indexOf('#/kategori/') === 0) { renderCategory(h.slice('#/kategori/'.length)); }
   else if (h.indexOf('#/tool/') === 0) { renderTool(h.slice('#/tool/'.length)); }
   else { renderHome(); }

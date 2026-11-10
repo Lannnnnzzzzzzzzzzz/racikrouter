@@ -2360,6 +2360,56 @@ var SNIPPETS = [
   }
 ];
 
-window.RR = { cats: CATS, tools: TOOLS, snippets: SNIPPETS, loginHtml: loginHtml };
+var DOWNLOADS = [
+  { name: 'WinBox Klasik (v3)', plat: 'Windows', g: 'desktop',
+    descId: 'Aplikasi utama untuk mengelola RouterOS dari PC. Versi klasik yang paling banyak dipakai teknisi, ringan dan lengkap.',
+    descEn: 'The main app for managing RouterOS from a PC. The classic release most technicians use, light and complete.',
+    links: [
+      { lId: 'Unduh 64-bit', lEn: 'Download 64-bit', url: 'https://download.mikrotik.com/routeros/winbox/3.43/winbox64.exe' },
+      { lId: 'Unduh 32-bit', lEn: 'Download 32-bit', url: 'https://download.mikrotik.com/routeros/winbox/3.43/winbox.exe' }
+    ] },
+  { name: 'WinBox 4', plat: 'Windows / Linux / macOS', g: 'desktop',
+    descId: 'WinBox generasi baru dengan tampilan modern dan mode gelap. Tersedia untuk tiga sistem operasi di halaman resmi MikroTik.',
+    descEn: 'The new generation WinBox with a modern look and dark mode. Available for three operating systems on the official MikroTik page.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/winbox' } ] },
+  { name: 'Netinstall', plat: 'Windows / Linux', g: 'desktop',
+    descId: 'Tool resmi untuk memasang ulang RouterOS lewat kabel jaringan, penyelamat saat router gagal boot atau lupa kata sandi.',
+    descEn: 'The official tool to reinstall RouterOS over a network cable, the rescue path when a router fails to boot or the password is lost.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/tools' } ] },
+  { name: 'The Dude Client', plat: 'Windows', g: 'desktop',
+    descId: 'Klien pemantau jaringan The Dude. Menggambar peta perangkat, memantau status naik turun, dan memberi peringatan saat ada perangkat mati.',
+    descEn: 'The Dude network monitoring client. It maps your devices, watches up and down status, and alerts you when a device goes offline.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/tools' } ] },
+  { name: 'FlashFig', plat: 'Windows', g: 'desktop',
+    descId: 'Mengirim satu berkas konfigurasi awal ke banyak router baru sekaligus saat pertama dinyalakan. Hemat waktu untuk pemasangan massal.',
+    descEn: 'Pushes one initial configuration file to many new routers at once on first boot. Saves time on bulk deployments.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/tools' } ] },
+  { name: 'Bandwidth Test', plat: 'Windows', g: 'desktop',
+    descId: 'Tool resmi untuk menguji kecepatan nyata antar perangkat MikroTik atau dari PC ke router, memakai protokol btest RouterOS.',
+    descEn: 'The official tool to measure real throughput between MikroTik devices or from a PC to a router, using the RouterOS btest protocol.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/tools' } ] },
+  { name: 'Neighbour Viewer dan Mac Telnet', plat: 'Windows', g: 'desktop',
+    descId: 'Melihat router MikroTik lain yang satu jaringan dan menyambung lewat alamat MAC. Penyelamat saat alamat IP router lupa.',
+    descEn: 'Discovers other MikroTik routers on the same network and connects by MAC address. A lifesaver when the router IP is forgotten.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/tools' } ] },
+  { name: 'MikroTik Pro', plat: 'Android / iOS', g: 'mobile',
+    descId: 'Aplikasi resmi untuk mengelola router dari HP, memantau trafik, dan mengubah setelan dasar tanpa membuka laptop.',
+    descEn: 'The official app to manage your router from a phone, watch traffic, and change basic settings without opening a laptop.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/mobile' } ] },
+  { name: 'Back To Home (MikroTik VPN)', plat: 'Android / iOS', g: 'mobile',
+    descId: 'Aplikasi VPN resmi MikroTik. Beberapa ketukan saja, HP tersambung aman ke jaringan rumah atau sekolah lewat router kamu.',
+    descEn: 'The official MikroTik VPN app. A few taps and your phone connects securely to your home or school network through your router.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/mobile' } ] },
+  { name: 'MikroTik CHR', plat: 'Virtual / Cloud', g: 'sistem',
+    descId: 'RouterOS versi mesin virtual untuk PC, server, atau cloud. Cocok untuk belajar, lab uji, dan router virtual sungguhan. Di halaman yang sama juga ada RouterOS dan SwitchOS.',
+    descEn: 'The virtual machine edition of RouterOS for PCs, servers, or cloud. Good for learning, test labs, and real virtual routers. The same page also carries RouterOS and SwitchOS.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/routeros' } ] },
+  { name: 'MikroTik.mib', plat: 'Semua platform', g: 'sistem',
+    descId: 'Berkas MIB resmi MikroTik untuk pemantauan SNMP. Dibaca oleh Zabbix, The Dude, dan tool pemantau lain agar isi router terbaca benar.',
+    descEn: 'The official MikroTik MIB file for SNMP monitoring. Read by Zabbix, The Dude, and other monitoring tools so router values are interpreted correctly.',
+    links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/tools' } ] }
+];
+
+window.RR = { cats: CATS, tools: TOOLS, snippets: SNIPPETS, downloads: DOWNLOADS, loginHtml: loginHtml };
 
 })();
