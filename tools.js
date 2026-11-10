@@ -26,6 +26,7 @@ function prefixPart(cidr) { var p = String(cidr).split('/')[1]; return p ? p : '
 function ipToNum(ip) { var a = String(ip).split('.').map(Number); return ((a[0] * 256 + a[1]) * 256 + a[2]) * 256 + a[3]; }
 function numToIp(n) { return [Math.floor(n / 16777216) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 256) % 256, n % 256].join('.'); }
 function ipAdd(ip, n) { return numToIp(ipToNum(ip) + n); }
+function netPart(cidr) { var p = parseInt(prefixPart(cidr), 10); var mask = p === 0 ? 0 : (0xFFFFFFFF << (32 - p)) >>> 0; return numToIp((ipToNum(ipPart(cidr)) & mask) >>> 0); }
 function rateToK(s) {
   var m = String(s).trim().match(/^(\d+(?:\.\d+)?)\s*([kKmMgG])?$/);
   if (!m) { return null; }
@@ -137,11 +138,14 @@ TOOLS.push(T('dhcp-client-wan', 'dasar', 'DHCP Client untuk WAN', 'DHCP Client f
   ],
   function (v) {
     return H('DHCP Client untuk WAN') +
+      '# Hapus DHCP client lama pada interface ini dulu (misalnya bawaan pabrik router), karena satu interface hanya boleh punya satu DHCP client\n' +
+      '/ip dhcp-client remove [find interface=' + v.iface + ']\n' +
       '/ip dhcp-client add interface=' + v.iface + ' disabled=no add-default-route=' + v.route +
       ' default-route-distance=' + v.jarak + ' use-peer-dns=' + (v.dns ? 'yes' : 'no') + ' use-peer-ntp=yes\n';
   },
   function () {
     return [
+      'Baris pertama menghapus DHCP client lama pada interface yang sama, misalnya bawaan pabrik router, karena RouterOS hanya mengizinkan satu DHCP client per interface.',
       'Router meminta alamat, gateway, dan DNS ke ISP setiap kali interface ini menyala.',
       'Bila rute default diaktifkan, semua trafik internet keluar lewat pemberian ISP ini.',
       'Distance berguna bila ada dua WAN: angka lebih kecil berarti lebih diprioritaskan.'
@@ -211,9 +215,9 @@ TOOLS.push(T('netwatch', 'dasar', 'Netwatch', 'Netwatch',
       down = '{:log error "Netwatch: ' + v.host + ' tidak terjangkau"}';
     }
     return H('Netwatch') +
-      '/tool netwatch add host=' + v.host + ' interval=' + v.interval + ' timeout=5s\n' +
-      '  down-script=' + down + '\n' +
-      '  up-script={:log info "Netwatch: ' + v.host + ' kembali terjangkau"}\n';
+      '/tool netwatch add host=' + v.host + ' interval=' + v.interval + ' timeout=5s' +
+      ' down-script=' + down +
+      ' up-script={:log info "Netwatch: ' + v.host + ' kembali terjangkau"}\n';
   },
   function () {
     return [
@@ -235,8 +239,8 @@ TOOLS.push(T('backup-email', 'dasar', 'Backup Otomatis ke Email', 'Automatic Bac
   ],
   function (v) {
     return H('Backup Otomatis ke Email') +
-      '/tool e-mail set server=' + v.smtp + ' port=' + v.port + ' start-tls=yes user=' + q(v.user) + ' password=' + q(v.pass) + ' from=' + q(v.user) + '\n' +
-      '/system script add name=kirim-backup policy=ftp,reboot,read,write,policy,test,password,sensitive source={\n' +
+      '/tool e-mail set server=' + v.smtp + ' port=' + v.port + ' tls=starttls user=' + q(v.user) + ' password=' + q(v.pass) + ' from=' + q(v.user) + '\n' +
+      '/system script add name=kirim-backup policy=ftp,reboot,read,write,policy,test,sensitive source={\n' +
       '  :local nama "backup-router";\n' +
       '  /system backup save name=$nama;\n' +
       '  /export hide-sensitive file=$nama;\n' +
@@ -715,10 +719,11 @@ TOOLS.push(T('bgp-dasar', 'routing', 'BGP Dasar (eBGP)', 'Basic BGP (eBGP)',
   function (v) {
     var L = [];
     if (v.prefix) {
-      L.push('/routing filter rule add chain=bgp-keluar place-before=0 rule="if (dst in ' + v.prefix + ') { accept }" comment="Hanya umumkan prefix sendiri"');
+      L.push('/routing filter rule add chain=bgp-keluar rule="if (dst in ' + v.prefix + ') { accept }" comment="Hanya umumkan prefix sendiri"');
       L.push('/routing filter rule add chain=bgp-keluar rule="reject" comment="Tolak sisanya"');
     }
-    var conn = '/routing bgp connection add name=peer-tetangga as=' + v.as + ' router-id=' + v.rid +
+    L.push('/routing bgp instance add name=instansi-lokal as=' + v.as + ' router-id=' + v.rid);
+    var conn = '/routing bgp connection add name=peer-tetangga instance=instansi-lokal as=' + v.as +
       ' remote.address=' + v.peer + '/32 remote.as=' + v.asr + ' local.role=ebgp connect=yes listen=yes';
     if (v.prefix) { conn += ' output.filter-chain=bgp-keluar'; }
     L.push(conn);
@@ -1082,15 +1087,23 @@ TOOLS.push(T('pisah-game', 'firewall', 'Pisah Trafik Game dan Browsing', 'Split 
     L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' protocol=udp dst-port=' + ports + ' action=mark-packet new-packet-mark=paket-game passthrough=no comment="Tandai game"');
     L.push('# Sisanya yang berupa web ditandai sebagai browsing');
     L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' protocol=tcp dst-port=80,443 action=mark-packet new-packet-mark=paket-browsing passthrough=no comment="Tandai browsing"');
-    L.push('# Antrean: game prioritas 1, browsing prioritas 8');
-    L.push('/queue tree add name=antrean-utama parent=' + v.parent + ' max-limit=' + v.total + ' comment="Induk pemisah trafik"');
-    L.push('/queue tree add name=game parent=antrean-utama packet-mark=paket-game priority=1 comment="Game didahulukan"');
-    L.push('/queue tree add name=browsing parent=antrean-utama packet-mark=paket-browsing priority=8 comment="Browsing menunggu"');
+    var bagian = String(v.total).split('/');
+    var up = (bagian[0] || '').trim();
+    var down = (bagian[1] || bagian[0] || '').trim();
+    L.push('# Antrean unduh: game prioritas 1, browsing prioritas 8 (queue tree hanya menerima satu nilai batas per antrean, jadi arah unduh dan unggah dipisah)');
+    L.push('/queue tree add name=antrean-unduh parent=' + v.parent + ' max-limit=' + down + ' comment="Induk unduh pemisah trafik"');
+    L.push('/queue tree add name=game-unduh parent=antrean-unduh packet-mark=paket-game priority=1 comment="Game didahulukan saat unduh"');
+    L.push('/queue tree add name=browsing-unduh parent=antrean-unduh packet-mark=paket-browsing priority=8 comment="Browsing menunggu saat unduh"');
+    L.push('# Antrean unggah: pola yang sama untuk arah naik');
+    L.push('/queue tree add name=antrean-unggah parent=' + v.parent + ' max-limit=' + up + ' comment="Induk unggah pemisah trafik"');
+    L.push('/queue tree add name=game-unggah parent=antrean-unggah packet-mark=paket-game priority=1 comment="Game didahulukan saat unggah"');
+    L.push('/queue tree add name=browsing-unggah parent=antrean-unggah packet-mark=paket-browsing priority=8 comment="Browsing menunggu saat unggah"');
     return H('Pisah Trafik Game dan Browsing') + L.join('\n') + '\n';
   },
   function () {
     return [
       'Mangle memberi cap pada paket: cap paket-game untuk port game, cap paket-browsing untuk web.',
+      'Queue tree hanya menerima satu nilai batas per antrean, jadi arah unduh dan unggah dibuatkan induk antrean sendiri sendiri.',
       'Queue tree membaca cap itu. Prioritas 1 berarti paket game selalu dilayani lebih dulu saat jalur penuh.',
       'Prioritas bukan menambah kecepatan total. Ia hanya menentukan siapa yang menunggu saat semua orang memakai internet bersamaan.',
       'Daftar port game adalah perkiraan awal. Bila game tertentu tetap tersendat, periksa port aslinya di dokumentasi game itu lalu tambahkan.'
@@ -1652,8 +1665,9 @@ TOOLS.push(T('pppoe-isolasi', 'hotspot', 'Isolasi Pelanggan PPPoE', 'PPPoE Custo
     L.push('# /ppp secret add name="nama-pelanggan" password="ganti-sendiri" service=pppoe profile=profil-pppoe-aman');
     if (v.arpOnly) {
       L.push('# Bagian 2: ARP reply only');
-      L.push('# Berlaku bila interface pelanggan adalah port ethernet fisik. Bila berupa bridge, terapkan pada port fisik anggotanya.');
-      L.push('/interface ethernet set [find name=' + q(v.iface) + '] arp=reply-only');
+      L.push('# Dua baris berikut saling melengkapi: yang bekerja adalah baris yang jenis interfacenya cocok (bridge atau ethernet fisik), baris lainnya diam saja.');
+      L.push(':foreach i in=[/interface bridge find name=' + q(v.iface) + '] do={/interface bridge set $i arp=reply-only}');
+      L.push(':foreach i in=[/interface ethernet find name=' + q(v.iface) + '] do={/interface ethernet set $i arp=reply-only}');
     }
     if (v.horizon) {
       L.push('# Bagian 3: split horizon pada port bridge pelanggan');
@@ -2147,6 +2161,8 @@ TOOLS.push(T('wizard-rtrwnet', 'wizard', 'Wizard Paket RT RW Net', 'RT RW Net Pa
     L.push('/system identity set name=Router-RTRWNet');
     L.push('# Bagian WAN');
     if (v.wanTipe === 'dhcp') {
+      L.push('# Hapus DHCP client lama di interface WAN dulu (misalnya bawaan pabrik router) agar tidak bentrok');
+      L.push('/ip dhcp-client remove [find interface=' + v.wanIface + ']');
       L.push('/ip dhcp-client add interface=' + v.wanIface + ' disabled=no add-default-route=yes use-peer-dns=yes');
     } else {
       if (v.wanIp) { L.push('/ip address add address=' + v.wanIp + ' interface=' + v.wanIface + ' comment="WAN statis"'); }
@@ -2157,7 +2173,7 @@ TOOLS.push(T('wizard-rtrwnet', 'wizard', 'Wizard Paket RT RW Net', 'RT RW Net Pa
     L.push('/ip address add address=' + v.lanIp + ' interface=' + v.lanIface + ' comment="Gateway pelanggan"');
     L.push('/ip pool add name=pool-pelanggan ranges=' + v.from + '-' + v.to);
     L.push('/ip dhcp-server add name=dhcp-pelanggan interface=' + v.lanIface + ' address-pool=pool-pelanggan lease-time=1d disabled=no');
-    L.push('/ip dhcp-server network add address=' + ipPart(v.lanIp) + '/' + prefixPart(v.lanIp) + ' gateway=' + ipPart(v.lanIp) + ' dns-server=' + ipPart(v.lanIp));
+    L.push('/ip dhcp-server network add address=' + netPart(v.lanIp) + '/' + prefixPart(v.lanIp) + ' gateway=' + ipPart(v.lanIp) + ' dns-server=' + ipPart(v.lanIp));
     L.push('# Bagian NAT dan proteksi dasar');
     L.push('/ip firewall nat add chain=srcnat out-interface=' + v.wanIface + ' action=masquerade comment="Internet untuk pelanggan"');
     L.push('/ip firewall filter add chain=input connection-state=established,related action=accept comment="Terima koneksi berjalan"');
@@ -2208,7 +2224,7 @@ TOOLS.push(T('wizard-hotspot-sekolah', 'wizard', 'Wizard Paket Hotspot Sekolah',
     L.push('/ip hotspot profile add name=profil-sekolah dns-name=' + v.dnsname + ' hotspot-address=' + v.gw + ' html-directory=hotspot login-by=http-chap,http-pap');
     L.push('/ip hotspot add name=hotspot-sekolah interface=' + v.iface + ' address-pool=pool-sekolah profile=profil-sekolah disabled=no');
     L.push('/ip hotspot user profile add name=siswa rate-limit=' + v.rate + ' shared-users=' + v.shared + ' status-autorefresh=1m');
-    L.push('/ip hotspot user profile add name=guru shared-users=3 status-autorefresh=1m comment="Guru tanpa rate limit bawaan profil"');
+    L.push('/ip hotspot user profile add name=guru shared-users=3 status-autorefresh=1m');
     L.push('/ip hotspot user add name=operator password="ganti-setelah-terpasang" profile=guru comment="Akun operator awal, wajib ganti password"');
     L.push('# Pola membuat akun siswa: /ip hotspot user add name="nis-siswa" password="acak" profile=siswa limit-uptime=' + v.uptime);
     L.push('# Perawatan: awasi gateway dan backup mingguan');
