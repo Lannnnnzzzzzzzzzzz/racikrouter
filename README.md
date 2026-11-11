@@ -27,20 +27,20 @@ Service worker (`sw.js`) hanya aktif bila situs disajikan lewat http atau https,
 | `index.html` | Kerangka halaman: sidebar navigasi (menu, kategori beserta jumlah tool), bilah atas tipis (pencarian, toggle bahasa dan tema), dan wadah tampilan. |
 | `styles.css` | Seluruh gaya, tema terang (wajah utama) dan gelap, tata letak desktop dan mobile. |
 | `app.js` | Mesin aplikasi: router hash, render form dari skema, validasi, konsol hasil, favorit, riwayat, pencarian, ganti tema dan bahasa, sidebar dan drawer. |
-| `tools.js` | Data: 12 kategori, 73 tool, 10 cuplikan database script, dan 11 item unduhan resmi. Tiap tool berisi skema form, fungsi pembuat script, dan penjelasan Bahasa Indonesia. |
+| `tools.js` | Data: 12 kategori, 91 tool, 10 cuplikan database script, dan 11 item unduhan resmi. Tiap tool berisi skema form, fungsi pembuat script, dan penjelasan Bahasa Indonesia. |
 | `manifest.webmanifest` dan `icon.svg` | Metadata agar situs bisa dipasang seperti aplikasi (PWA). |
 | `sw.js` | Service worker penyimpan berkas aplikasi untuk pemakaian luring. |
 | `DESIGN.md` | Arah desain: palet, tipografi, dan alasan setiap keputusan besar. |
 | `preview/` | Tangkapan layar hasil verifikasi desain pertama (desktop dan mobile). |
 | `preview-v3/` | Tangkapan layar hasil rombak desain gaya dashboard (beranda dan tool pada lebar 320 sampai 1600, plus tema gelap). |
 
-## Cakupan tool (73)
+## Cakupan tool (91)
 
-- Dasar dan Sistem: 17 tool (identitas dan NTP, IP LAN, DHCP server, DHCP client, DNS, ganti password, Netwatch, backup ke email, laporan Telegram, watchdog pemulihan, Kid Control, tambah pengguna admin, pool IP, reboot otomatis, ekspor backup .rsc, pelindung bootloader, bersihkan cache DNS).
+- Dasar dan Sistem: 22 tool (identitas dan NTP, IP LAN, DHCP server, DHCP client, DNS, ganti password, Netwatch, backup ke email, laporan Telegram, watchdog pemulihan, Kid Control, tambah pengguna admin, pool IP, reboot otomatis, ekspor backup .rsc, pelindung bootloader, bersihkan cache DNS, bersihkan log terminal, kontrol layanan IP, kembalikan nama interface, ping tool, ganti alamat MAC).
 - Routing: 10 tool (rute statis, failover recursive, load balancing PCC, load balancing PCC 3 sampai 5 WAN, load balancing ECMP, policy routing aplikasi, OSPF, BGP, VRRP, VLAN per gedung untuk segmentasi sekolah dan kantor).
-- Firewall dan NAT: 18 tool (masquerade, port forwarding, hairpin NAT, blokir situs, proteksi dasar, pisah trafik game, anti DDoS, anti hack exploit, anti hack MikroTik, anti netcut, anti ping WAN, blokir akses modem, blokir IP, blokir MAC, blokir proxy terbuka, blokir DNS rekursif terbuka, blokir port, bypass trafik lokal).
+- Firewall dan NAT: 26 tool (masquerade, port forwarding, hairpin NAT, blokir situs, proteksi dasar, pisah trafik game, anti DDoS, anti hack exploit, anti hack MikroTik, anti netcut, anti ping WAN, blokir akses modem, blokir IP, blokir MAC, blokir proxy terbuka, blokir DNS rekursif terbuka, blokir port, bypass trafik lokal, blokir situs Layer 7, blokir situs DNS statis, buang paket invalid, blokir traceroute, FastTrack, lindungi server btest, lindungi MAC server, lindungi Neighbor Discovery).
 - Queue: 4 tool (simple queue, queue tree PCQ, kalkulator burst, prioritas aplikasi).
-- Hotspot dan PPP: 6 tool (hotspot server, profil voucher, PPPoE server, PPPoE client, isolasi pelanggan PPPoE, User Manager).
+- Hotspot dan PPP: 11 tool (hotspot server, profil voucher, PPPoE server, PPPoE client, isolasi pelanggan PPPoE, User Manager, bypass IP binding, bersihkan cookie hotspot, generate voucher, IP binding MAC, PPP secret).
 - VPN: 6 tool (WireGuard, L2TP, SSTP, sertifikat, PPTP client, OpenVPN client).
 - IPv6: 3 tool (DHCPv6 prefix delegation, firewall IPv6, rute statis IPv6).
 - Wireless: 3 tool (AP rumahan, CAPsMAN manager, CAP).

@@ -40,6 +40,12 @@ function fmtK(k) {
   if (k >= 1024) { return (Math.round(k / 102.4) / 10) + 'M'; }
   return k + 'k';
 }
+// Cache alamat MAC acak untuk tool Change MAC Address: dibuat sekali saat
+// mode acak dipilih, lalu dipakai ulang supaya script tidak berubah-ubah
+// setiap kali kolom lain disentuh. Ganti mode ke manual lalu kembali ke
+// acak untuk membuat alamat baru.
+var macAcakCache = '';
+var macAcakPrev = '';
 
 var CATS = [
   { id: 'dasar', nameId: 'Dasar dan Sistem', nameEn: 'Basics and System', note: 'Identitas, alamat IP, DHCP, DNS, dan perawatan router.' },
@@ -492,6 +498,155 @@ TOOLS.push(T('clear-dns-flush', 'dasar', 'Clear DNS Flush', 'Clear DNS Flush',
       'Perintah ini berguna setelah pindah server DNS atau saat sebuah situs baru pindah hosting tetapi perangkat masih membuka alamat lamanya.',
       'Bila opsi tampil dicentang, baris kedua mencetak jumlah entri cache yang tersisa, biasanya nol, sebagai bukti flush sudah berjalan.',
       'Peringatan praktis: sesaat setelah flush, membuka situs terasa sedikit lebih lambat karena cache harus dibangun ulang dari nol, tetapi itu normal dan hanya berlangsung sebentar.'
+    ];
+  }));
+
+TOOLS.push(T('clear-log', 'dasar', 'Clear Log Terminal', 'Clear Log Terminal',
+  'Hapus entri log router dari buffer memory, semua atau hanya satu topik tertentu, supaya log lama tidak menumpuk.',
+  [
+    f('mode', 'Yang dihapus', 'select', 'semua', { opts: [{ v: 'semua', l: 'Semua entri log' }, { v: 'topik', l: 'Hanya satu topik' }] }),
+    f('topik', 'Topik yang dihapus', 'text', 'info', { opt: 1, help: 'Dipakai bila mode di atas "Hanya satu topik". Contoh info, warning, error, hotspot, atau system.' }),
+    f('tampil', 'Tampilkan sisa entri log sesudahnya', 'check', false)
+  ],
+  function (v) {
+    var s = H('Clear Log Terminal');
+    if (v.mode === 'topik' && v.topik) {
+      s += '/log remove [find topics~' + q(v.topik) + ']\n';
+    } else {
+      s += '/log remove [find]\n';
+    }
+    if (v.tampil) {
+      s += ':put ("Sisa entri log: " . [:len [/log find]])\n';
+    }
+    return s;
+  },
+  function () {
+    return [
+      'Perintah remove mengosongkan entri log dari buffer memory router, bukan dari berkas, jadi log yang sudah diekspor ke berkas tetap aman.',
+      'Mode satu topik memakai pencocokan topics, berguna misalnya untuk membersihkan banjir info hotspot tanpa menghapus peringatan penting.',
+      'Log yang dihapus tidak bisa dikembalikan. Bila log itu bukti gangguan, ekspor dulu dengan print file sebelum menjalankan script ini.',
+      'Peringatan praktis: setelah dibersihkan, log mulai terisi lagi dari nol, jadi kejadian lama tidak lagi bisa dilacak dari router ini.'
+    ];
+  }));
+
+TOOLS.push(T('ip-service', 'dasar', 'IP Service Control', 'IP Service Control',
+  'Atur port layanan kelola router (Winbox dan SSH), matikan layanan yang tidak dipakai, dan batasi alamat yang boleh membuka layanan kelola.',
+  [
+    f('winboxPort', 'Port Winbox', 'number', 8291, { v: 'num', min: 1, max: 65535 }),
+    f('sshPort', 'Port SSH', 'number', 22, { v: 'num', min: 1, max: 65535 }),
+    f('offTelnet', 'Matikan Telnet', 'check', true),
+    f('offFtp', 'Matikan FTP', 'check', true),
+    f('offWww', 'Matikan WebFig (www)', 'check', false),
+    f('offApi', 'Matikan API', 'check', false),
+    f('batas', 'Batasi Winbox dan SSH ke jaringan ini (opsional)', 'cidr', '', { opt: 1, v: 'cidr', help: 'Bila diisi, Winbox dan SSH hanya menjawab dari jaringan ini. Salah isi bisa mengunci kamu dari router sendiri, jadi periksa dua kali.' })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/ip service set winbox port=' + v.winboxPort);
+    L.push('/ip service set ssh port=' + v.sshPort);
+    var off = [];
+    if (v.offTelnet) { off.push('telnet'); }
+    if (v.offFtp) { off.push('ftp'); }
+    if (v.offWww) { off.push('www'); }
+    if (v.offApi) { off.push('api'); }
+    if (off.length) { L.push('/ip service disable ' + off.join(',')); }
+    if (v.batas) {
+      L.push('/ip service set winbox address=' + v.batas);
+      L.push('/ip service set ssh address=' + v.batas);
+    }
+    return H('IP Service Control') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Dua baris pertama memindah port Winbox dan SSH dari angka bawaannya. Pemindai dari internet biasanya hanya mengetuk port bawaan, jadi langkah kecil ini sudah mengurangi banyak ketukan.',
+      'Telnet dan FTP mengirim password tanpa enkripsi, jadi keduanya dimatikan secara bawaan di sini. WebFig dan API hanya dimatikan bila kamu mencentangnya, karena ada yang masih memakainya.',
+      'Bila kolom batas jaringan diisi, Winbox dan SSH hanya menjawab dari jaringan itu. Pastikan alamat laptop pengelola masuk ke jaringan tersebut sebelum menjalankan script ini, atau kamu terkunci dari router sendiri.',
+      'Mengganti port bukan pengganti firewall. Pasangkan dengan aturan firewall input agar layanan kelola tetap tertutup dari arah internet.'
+    ];
+  }));
+
+TOOLS.push(T('iface-default-name', 'dasar', 'Interface Name to Default', 'Interface Name to Default',
+  'Kembalikan nama interface ke nama bawaan pabriknya (ether1, wlan1), memakai properti default-name tiap interface.',
+  [
+    f('scope', 'Jenis interface', 'select', 'ethernet', { opts: [{ v: 'ethernet', l: 'Ethernet (ether1, ether2, ...)' }, { v: 'wireless', l: 'Wireless (wlan1, wlan2, ...)' }] }),
+    f('tampil', 'Tampilkan daftar interface sesudahnya', 'check', true)
+  ],
+  function (v) {
+    var m = '/interface ' + v.scope;
+    var L = [];
+    L.push(':foreach i in=[' + m + ' find] do={ :local d [' + m + ' get $i default-name]; ' + m + ' set $i name=$d }');
+    if (v.tampil) { L.push(m + ' print'); }
+    return H('Interface Name to Default') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Perintah ini membaca properti default-name tiap interface, yaitu nama yang diberikan pabrik sebelum diubah, lalu mengembalikannya satu per satu.',
+      'Nama bawaan berguna saat mengikuti panduan atau script orang lain yang menyebut ether1 atau wlan1, karena nama yang sudah diganti sering membuat perintah contoh gagal.',
+      'Perintah print di akhir menampilkan daftar nama sesudah diubah, sebagai bukti nama sudah kembali ke bawaan.',
+      'Peringatan praktis: script lain yang merujuk nama interface lama (misalnya ether2-lan) akan gagal setelah nama dikembalikan, jadi periksa dulu aturan firewall, DHCP, dan queue yang memakai nama itu.'
+    ];
+  }));
+
+TOOLS.push(T('ping-tool', 'dasar', 'Ping Tool', 'Ping Tool',
+  'Uji keterjangkauan host dari router: kirim beberapa paket ping dan lihat hasilnya langsung di terminal.',
+  [
+    f('target1', 'Target pertama (IP atau nama host)', 'text', '8.8.8.8', { mono: 1 }),
+    f('target2', 'Target kedua (opsional)', 'text', '', { opt: 1, mono: 1, ph: '1.1.1.1' }),
+    f('count', 'Jumlah paket per target', 'number', 4, { v: 'num', min: 1, max: 100 }),
+    f('interval', 'Jeda antar paket', 'select', '500ms', { opts: ['200ms', '500ms', '1s', '2s'] })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/ping ' + v.target1 + ' count=' + v.count + ' interval=' + v.interval);
+    if (v.target2) { L.push('/ping ' + v.target2 + ' count=' + v.count + ' interval=' + v.interval); }
+    L.push(':log info "Uji ping selesai"');
+    return H('Ping Tool') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Setiap baris ping mengirim paket sebanyak jumlah yang kamu isi, dengan jeda antar paket sesuai pilihan, dan hasilnya tampil langsung di terminal tempat script dijalankan.',
+      'Balasan yang hilang ditandai timeout. Satu atau dua timeout sesekali masih wajar, tetapi bila semua paket hilang, periksa dulu kabel, gateway, dan DNS sebelum menyalahkan ISP.',
+      'Menguji dua target sekaligus membantu membedakan masalah lokal dan masalah internet: bila target pertama menjawab tetapi target kedua tidak, masalahnya ada di luar router.',
+      'Baris terakhir mencatat penyelesaian uji ke log router, supaya ada jejaknya bila nanti dicek ulang.'
+    ];
+  }));
+
+TOOLS.push(T('change-mac', 'dasar', 'Change MAC Address', 'Change MAC Address',
+  'Ganti alamat MAC satu interface ethernet, diisi manual atau dibuat acak (locally administered, diawali 02, 06, 0A, atau 0E).',
+  [
+    f('iface', 'Interface', 'text', 'ether2', { mono: 1 }),
+    f('mode', 'Alamat MAC baru', 'select', 'acak', { opts: [{ v: 'manual', l: 'Isi manual pada kolom di bawah' }, { v: 'acak', l: 'Buat acak otomatis' }] }),
+    f('mac', 'Alamat MAC baru', 'text', '', { opt: 1, mono: 1, ph: '02:11:22:33:44:55', help: 'Format enam pasang heksadesimal dipisah titik dua. Dipakai bila mode di atas "Isi manual".' }),
+    f('bounce', 'Matikan lalu nyalakan lagi interface sesudah ganti', 'check', false, { help: 'Membantu bila alamat baru tidak langsung aktif. Koneksi lewat interface ini putus sesaat.' })
+  ],
+  function (v) {
+    var mac = v.mac;
+    if (v.mode === 'acak') {
+      if (macAcakPrev !== 'acak' || !macAcakCache) {
+        var first = [0x02, 0x06, 0x0A, 0x0E][Math.floor(Math.random() * 4)];
+        var b = [first];
+        for (var i = 1; i < 6; i++) { b.push(Math.floor(Math.random() * 256)); }
+        macAcakCache = b.map(function (x) { return (x < 16 ? '0' : '') + x.toString(16).toUpperCase(); }).join(':');
+      }
+      mac = macAcakCache;
+    }
+    macAcakPrev = v.mode;
+    var L = [];
+    if (!mac) {
+      L.push('# Isi alamat MAC baru pada kolom di atas, atau pilih mode "Buat acak otomatis".');
+      return H('Change MAC Address') + L.join('\n') + '\n';
+    }
+    if (v.bounce) { L.push('/interface ethernet disable ' + v.iface); }
+    L.push('/interface ethernet set [find name=' + v.iface + '] mac-address=' + mac);
+    if (v.bounce) { L.push('/interface ethernet enable ' + v.iface); }
+    return H('Change MAC Address') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Alamat MAC adalah identitas perangkat di lapisan dua. Menggantinya berguna bila ISP mengunci layanan ke MAC tertentu, atau bila dua perangkat terlanjur memakai MAC yang sama.',
+      'Mode acak memakai oktet pertama 02, 06, 0A, atau 0E, yaitu alamat locally administered yang tidak akan bertabrakan dengan alamat pabrik perangkat lain.',
+      'Perubahan MAC bisa membuat link putus sesaat, karena perangkat di ujung lain harus mempelajari ulang alamatnya lewat ARP.',
+      'Catat alamat MAC lama sebelum menjalankan script ini. Bila ISP ternyata mengunci MAC lama, kamu butuh alamat itu untuk kembali.'
     ];
   }));
 
@@ -1366,6 +1521,187 @@ TOOLS.push(T('bypass-local', 'firewall', 'Bypass Local Traffic', 'Bypass Local T
     ];
   }));
 
+TOOLS.push(T('block-web-l7', 'firewall', 'Block Website (Layer 7)', 'Block Website (Layer 7)',
+  'Blokir situs memakai penyaring Layer 7: alamat yang mengandung kata atau domain dalam daftar dikenali dari isi paket lalu dibuang.',
+  [
+    f('daftar', 'Domain atau kata yang diblokir', 'textarea', 'situs-judi.contoh\nsitus-dewasa.contoh', { mono: 1, help: 'Satu domain atau kata per baris. Domain berakhiran .contoh adalah contoh penulisan, ganti dengan domain aslimu.' }),
+    f('chain', 'Chain firewall', 'select', 'forward', { opts: ['forward', 'input'] }),
+    f('komen', 'Komentar aturan', 'text', 'Situs diblokir (Layer 7)', { opt: 1 })
+  ],
+  function (v) {
+    var words = String(v.daftar).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var esc = words.map(function (w) { return w.replace(/\./g, '\\.'); }).join('|');
+    var L = [];
+    L.push('/ip firewall layer7-protocol add name=blokir-situs-l7 regexp=' + q('^.+(' + esc + ').*$'));
+    L.push('/ip firewall filter add chain=' + v.chain + ' layer7-protocol=blokir-situs-l7 action=drop comment=' + q(v.komen || 'Situs diblokir Layer 7'));
+    return H('Block Website (Layer 7)') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Baris pertama membuat pola Layer 7 dari daftar yang kamu isi. Titik pada domain ditulis sebagai titik biasa di pola, jadi polanya hanya cocok dengan nama domain itu, bukan sembarang karakter.',
+      'Aturan filter membuang paket yang isinya cocok dengan pola tersebut, pada chain yang kamu pilih.',
+      'Keterbatasan yang jujur: situs modern memakai HTTPS, sehingga isi paketnya terenkripsi dan tidak bisa dibaca Layer 7. Pola ini hanya bekerja pada trafik HTTP yang tidak terenkripsi atau pada nama host yang masih terlihat.',
+      'Untuk hasil yang lebih rapi, padukan dengan blokir lewat DNS statis (tool Block Website Static DNS), karena DNS melihat nama domain sebelum koneksi terenkripsi dibuat.'
+    ];
+  }));
+
+TOOLS.push(T('block-web-dns', 'firewall', 'Block Website (Static DNS)', 'Block Website (Static DNS)',
+  'Blokir situs lewat DNS statis router: nama domain dalam daftar dijawab dengan alamat pengalihan, jadi browser tidak pernah sampai ke situs aslinya.',
+  [
+    f('daftar', 'Domain yang diblokir', 'textarea', 'situs-judi.contoh\nsitus-dewasa.contoh', { mono: 1, help: 'Satu domain per baris. Domain berakhiran .contoh adalah contoh penulisan, ganti dengan domain aslimu.' }),
+    f('tujuan', 'Alamat pengalihan (IP)', 'ip', '127.0.0.1', { v: 'ip', help: 'Alamat yang dikembalikan sebagai jawaban DNS. 127.0.0.1 membuat browser gagal tersambung.' }),
+    f('remote', 'Nyalakan allow-remote-requests (klien LAN memakai DNS router)', 'check', true)
+  ],
+  function (v) {
+    var lines = String(v.daftar).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var L = [];
+    if (v.remote) { L.push('/ip dns set allow-remote-requests=yes'); }
+    lines.forEach(function (d) { L.push('/ip dns static add name=' + d + ' address=' + v.tujuan + ' comment="Diblokir"'); });
+    return H('Block Website (Static DNS)') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Setiap domain dalam daftar dibuatkan satu entri DNS statis yang menjawab dengan alamat pengalihan, bukan alamat asli situs itu.',
+      'Supaya blokir ini terasa, perangkat klien harus memakai router sebagai DNS. Centang opsi pertama agar router menjawab pertanyaan DNS dari LAN, dan pastikan DHCP membagikan alamat router sebagai DNS.',
+      'Entri ini hanya cocok untuk nama persis yang ditulis. Subdomain seperti www butuh entrinya sendiri, karena router tidak menebak nama turunan secara otomatis.',
+      'Bila perangkat sudah memakai DNS lain secara manual (misalnya 8.8.8.8 langsung di HP), blokir ini tidak berlaku untuk perangkat itu. Tutup jalur itu dengan aturan firewall bila perlu.'
+    ];
+  }));
+
+TOOLS.push(T('drop-invalid', 'firewall', 'Drop Invalid Packets', 'Drop Invalid Packets',
+  'Buang paket berstatus connection-state invalid, yaitu paket yang tidak masuk akal dalam alur koneksi (sering dipakai pemindai dan serangan).',
+  [
+    f('chain', 'Chain firewall', 'select', 'both', { opts: [{ v: 'both', l: 'Input dan forward' }, { v: 'input', l: 'Input saja' }, { v: 'forward', l: 'Forward saja' }] }),
+    f('log', 'Catat paket yang dibuang ke log', 'check', false)
+  ],
+  function (v) {
+    var chains = v.chain === 'both' ? ['input', 'forward'] : [v.chain];
+    var L = [];
+    chains.forEach(function (c) {
+      L.push('/ip firewall filter add chain=' + c + ' connection-state=invalid action=drop' + (v.log ? ' log=yes' : '') + ' comment="Buang paket invalid"');
+    });
+    return H('Drop Invalid Packets') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Paket invalid adalah paket yang tidak cocok dengan koneksi mana pun yang sedang berjalan, misalnya balasan untuk koneksi yang sudah ditutup, atau paket dengan kombinasi flag TCP yang tidak wajar.',
+      'Aturan ini sebaiknya diletakkan sesudah aturan terima untuk koneksi established dan related, supaya paket sah yang sedang berjalan tidak ikut dibuang.',
+      'Opsi log hanya untuk diagnosis sesaat. Bila dinyalakan terus, log bisa penuh dengan cepat saat ada pemindaian, jadi matikan lagi setelah selesai memeriksa.'
+    ];
+  }));
+
+TOOLS.push(T('drop-traceroute', 'firewall', 'Drop Traceroute', 'Drop Traceroute',
+  'Sembunyikan router dari traceroute: balasan time-exceeded tidak dikirim dan paket UDP traceroute tidak diteruskan.',
+  [
+    f('icmp', 'Blokir balasan time-exceeded (ICMP tipe 11)', 'check', true, { help: 'Router tidak lagi membalas paket yang TTL-nya habis, jadi namanya tidak muncul sebagai hop.' }),
+    f('udp', 'Blokir UDP traceroute (port 33434 sampai 33534)', 'check', true)
+  ],
+  function (v) {
+    var L = [];
+    if (v.icmp) { L.push('/ip firewall filter add chain=output protocol=icmp icmp-options=11:0 action=drop comment="Sembunyikan hop traceroute"'); }
+    if (v.udp) { L.push('/ip firewall filter add chain=forward protocol=udp dst-port=33434-33534 action=drop comment="Blokir UDP traceroute"'); }
+    if (!L.length) { L.push('# Kedua opsi tidak dicentang, tidak ada aturan yang dibuat. Centang minimal satu opsi.'); }
+    return H('Drop Traceroute') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Traceroute bekerja dengan mengirim paket yang TTL-nya sengaja dibuat habis di tiap hop, lalu menunggu balasan time-exceeded dari hop itu. Aturan pertama membuang balasan tersebut, sehingga router ini tidak muncul sebagai hop.',
+      'Aturan kedua membuang paket UDP pada rentang port yang dipakai traceroute Unix, sehingga traceroute dari LAN ke internet juga terhenti di router ini.',
+      'Peringatan praktis: alat diagnosis jaringan milikmu sendiri juga ikut buta terhadap hop ini, jadi matikan sementara aturan ini saat kamu sedang melacak gangguan rute.',
+      'Menyembunyikan hop bukan membuat router tidak terlihat sepenuhnya. Pemindai masih bisa menemukan router lewat cara lain, jadi ini hanya lapisan tambahan, bukan pengganti firewall.'
+    ];
+  }));
+
+TOOLS.push(T('fasttrack', 'firewall', 'Enable Fasttrack', 'Enable Fasttrack',
+  'Aktifkan FastTrack untuk koneksi yang sudah berjalan, supaya paket diteruskan langsung tanpa melewati antrean firewall yang berat.',
+  [
+    f('terima', 'Tambahkan aturan terima koneksi berjalan sesudahnya', 'check', true, { help: 'Aturan accept pendamping untuk koneksi established dan related yang tidak kena FastTrack.' }),
+    f('komen', 'Komentar aturan', 'text', 'Fasttrack koneksi berjalan', { opt: 1 })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/ip firewall filter add chain=forward action=fasttrack-connection connection-state=established,related comment=' + q(v.komen || 'Fasttrack koneksi berjalan'));
+    if (v.terima) { L.push('/ip firewall filter add chain=forward action=accept connection-state=established,related comment="Terima koneksi berjalan"'); }
+    return H('Enable Fasttrack') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Aturan FastTrack hanya menyentuh koneksi yang sudah berjalan (established) dan yang berkaitan dengannya. Koneksi baru tetap lewat firewall seperti biasa, jadi aturan blokir untuk koneksi baru tetap berlaku.',
+      'Aturan ini harus berada di urutan paling atas pada chain forward. Bila ada aturan lain di atasnya, paket keburu diproses aturan itu sebelum sampai ke FastTrack.',
+      'Paket yang sudah di-FastTrack melewatkan firewall, queue, dan mangle. Artinya pembagian bandwidth dan penandaan paket tidak lagi berlaku untuk koneksi tersebut, jadi jangan nyalakan FastTrack bila queue adalah kebutuhan utama jaringanmu.',
+      'Saat mendiagnosis gangguan, matikan sementara aturan FastTrack, karena paket yang melompatinya tidak tercatat di hitungan aturan firewall.'
+    ];
+  }));
+
+TOOLS.push(T('protect-btest', 'firewall', 'Protect Btest Server', 'Protect Btest Server',
+  'Amankan server Bandwidth Test (port 2000): matikan bila tidak dipakai, atau kunci dengan login dan batasi sumbernya ke jaringan lokal.',
+  [
+    f('mode', 'Mode perlindungan', 'select', 'off', { opts: [{ v: 'off', l: 'Matikan server btest' }, { v: 'limit', l: 'Batasi: wajib login dan hanya dari LAN' }] }),
+    f('lan', 'Jaringan yang diizinkan (CIDR)', 'cidr', '192.168.88.0/24', { v: 'cidr', help: 'Dipakai bila mode di atas "Batasi". Di luar jaringan ini, percobaan btest dibuang firewall.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.mode === 'off') {
+      L.push('/tool bandwidth-server set enabled=no');
+    } else {
+      L.push('/tool bandwidth-server set enabled=yes authenticate=yes max-sessions=5');
+      L.push('/ip firewall filter add chain=input protocol=tcp dst-port=2000 src-address=!' + v.lan + ' action=drop comment="Btest hanya dari LAN"');
+    }
+    return H('Protect Btest Server') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Server Bandwidth Test menerima perintah uji kecepatan dari siapa saja. Tanpa pengaman, orang luar bisa membanjiri CPU dan bandwidth router hanya dengan menjalankan tes berulang kali.',
+      'Mode matikan adalah yang paling aman dan cukup untuk kebanyakan router, karena tes kecepatan biasanya hanya dibutuhkan sesekali.',
+      'Mode batasi menyalakan autentikasi, jadi penguji wajib login dengan akun router, membatasi lima sesi bersamaan, dan menutup port 2000 dari semua alamat di luar jaringan yang kamu isi.',
+      'Bila mode batasi dipilih, pastikan alamat laptop penguji masuk ke jaringan yang diizinkan, dan ingat password akun router saat menjalankan tes.'
+    ];
+  }));
+
+TOOLS.push(T('protect-mac-server', 'firewall', 'Protect Mac Server', 'Protect Mac Server',
+  'Batasi layanan MAC server ke daftar interface tertentu, supaya router tidak bisa dijangkau lewat alamat MAC dari sembarang port.',
+  [
+    f('daftar', 'Nama interface list yang diizinkan', 'text', 'LAN', { mono: 1, help: 'Daftar interface bawaan RouterOS: LAN, WAN, all, none. Pakai LAN agar hanya port LAN yang bisa MAC Telnet dan MAC Winbox.' }),
+    f('ping', 'Matikan ping lewat MAC server', 'check', true),
+    f('winbox', 'Matikan MAC Winbox', 'check', false, { help: 'Bila dicentang, router tidak lagi bisa dibuka lewat MAC address di Winbox. Pastikan akses IP ke router sudah aman dulu.' })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/tool mac-server set allowed-interface-list=' + v.daftar);
+    if (v.winbox) { L.push('/tool mac-server mac-winbox set enabled=no'); }
+    else { L.push('/tool mac-server mac-winbox set allowed-interface-list=' + v.daftar); }
+    if (v.ping) { L.push('/tool mac-server ping set enabled=no'); }
+    return H('Protect Mac Server') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'MAC server memungkinkan akses ke router lewat alamat MAC tanpa perlu alamat IP. Itu penyelamat saat IP router lupa, tetapi juga pintu masuk bagi siapa saja yang tersambung ke port yang sama.',
+      'Baris pertama membatasi MAC Telnet ke daftar interface yang kamu isi, biasanya LAN, sehingga port WAN tidak lagi bisa dipakai untuk mengetuk router lewat MAC.',
+      'Baris kedua melakukan hal yang sama untuk MAC Winbox, kecuali bila kamu memilih mematikannya sekalian.',
+      'Ping lewat MAC berguna untuk memeriksa kabel, tetapi jarang dibutuhkan sehari-hari, jadi dimatikan secara bawaan di sini.'
+    ];
+  }));
+
+TOOLS.push(T('protect-neighbor', 'firewall', 'Protect Neighbors Discovery', 'Protect Neighbors Discovery',
+  'Atur siapa yang boleh melihat router lewat Neighbor Discovery (MNDP, CDP, LLDP): batasi ke interface LAN atau matikan sama sekali.',
+  [
+    f('mode', 'Mode perlindungan', 'select', 'limit', { opts: [{ v: 'limit', l: 'Batasi ke interface list tertentu' }, { v: 'off', l: 'Matikan discovery sepenuhnya' }] }),
+    f('daftar', 'Nama interface list yang diizinkan', 'text', 'LAN', { mono: 1, help: 'Dipakai bila mode di atas "Batasi". Daftar bawaan: LAN, WAN, all, none.' })
+  ],
+  function (v) {
+    var list = v.mode === 'off' ? 'none' : v.daftar;
+    return H('Protect Neighbors Discovery') +
+      '/ip neighbor discovery-settings set discover-interface-list=' + list + '\n';
+  },
+  function () {
+    return [
+      'Neighbor Discovery membuat router mengumumkan identitasnya (nama, alamat, dan versi) ke perangkat tetangga, supaya Winbox dan The Dude bisa menemukannya otomatis.',
+      'Pengumuman ini juga bisa dibaca pihak yang tidak berkepentingan, misalnya penyusup yang sudah masuk ke satu segmen jaringan. Membatasinya ke interface LAN menutup pengumuman ke arah WAN.',
+      'Mode matikan sepenuhnya berguna untuk router yang menghadap internet langsung, tetapi Winbox tidak lagi bisa menemukan router ini lewat daftar Neighbors, jadi catat alamat IP-nya sebelum mematikan.',
+      'Perubahan ini tidak memengaruhi koneksi yang sudah berjalan. Ia hanya mengatur ke mana pengumuman discovery dikirim.'
+    ];
+  }));
+
 /* ================= Kategori: Queue ================= */
 
 TOOLS.push(T('simple-queue', 'queue', 'Simple Queue per Target', 'Simple Queue per Target',
@@ -1691,6 +2027,143 @@ TOOLS.push(T('pppoe-isolasi', 'hotspot', 'Isolasi Pelanggan PPPoE', 'PPPoE Custo
       'ARP reply only dan split horizon bekerja pada lapisan akses: tetangga satu segmen tidak bisa merebut alamat lewat ARP, dan port bridge tidak saling meneruskan trafik.',
       'Peringatan DHCP asing menjaga skenario klasik RT RW net: router pelanggan yang terbalik arah kabelnya bisa membagikan alamat liar ke satu segmen. Sekarang kejadian itu tercatat di log.',
       'Aturan terakhir menutup jalan pintas terakhir: walau sama sama pelanggan, trafik dari jaringan pelanggan ke jaringan pelanggan dibuang di forward, sementara jalan ke internet tetap terbuka.'
+    ];
+  }));
+
+TOOLS.push(T('bypass-hotspot-binding', 'hotspot', 'Bypass Hotspot IP Binding', 'Bypass Hotspot IP Binding',
+  'Bebaskan satu alamat IP dari kewajiban login hotspot (type bypassed), cocok untuk printer, CCTV, atau perangkat yang tidak bisa membuka halaman login.',
+  [
+    f('ip', 'Alamat IP perangkat', 'ip', '192.168.5.50', { v: 'ip' }),
+    f('mac', 'Alamat MAC perangkat (opsional)', 'text', '', { opt: 1, mono: 1, ph: 'AA:BB:CC:DD:EE:FF', help: 'Bila diisi, bypass hanya berlaku untuk pasangan IP dan MAC ini.' }),
+    f('server', 'Nama server hotspot (opsional)', 'text', '', { opt: 1, help: 'Kosongkan bila hanya ada satu server hotspot.' }),
+    f('komen', 'Komentar', 'text', '', { opt: 1, ph: 'Printer lantai 1' })
+  ],
+  function (v) {
+    var s = '/ip hotspot ip-binding add address=' + v.ip + ' type=bypassed';
+    if (v.mac) { s += ' mac-address=' + v.mac; }
+    if (v.server) { s += ' server=' + q(v.server); }
+    if (v.komen) { s += ' comment=' + q(v.komen); }
+    return H('Bypass Hotspot IP Binding') + s + '\n';
+  },
+  function () {
+    return [
+      'Satu baris ini mendaftarkan alamat IP ke daftar ip-binding hotspot dengan type bypassed, artinya perangkat itu langsung online tanpa membuka halaman login.',
+      'Bila alamat MAC ikut diisi, bypass hanya berlaku untuk pasangan IP dan MAC itu. Perangkat lain yang memakai IP yang sama tetap harus login.',
+      'Pakai bypass hanya untuk perangkat milik sendiri yang memang tidak bisa login, seperti printer, CCTV, atau sensor. Jangan bypass perangkat tamu, karena mereka lalu tidak tercatat sebagai pengguna hotspot.',
+      'Perangkat yang di-bypass tidak lagi dibatasi profil voucher, jadi kecepatannya mengikuti aturan umum jaringan, bukan paket voucher.'
+    ];
+  }));
+
+TOOLS.push(T('clear-hotspot-cookies', 'hotspot', 'Clear Hotspot Cookies', 'Clear Hotspot Cookies',
+  'Hapus cookie login hotspot yang tersimpan di router, supaya semua pengguna harus login ulang. Pilihan tambahan: putuskan juga pengguna yang sedang aktif.',
+  [
+    f('cookie', 'Hapus semua cookie hotspot', 'check', true),
+    f('aktif', 'Putuskan juga pengguna aktif', 'check', false, { help: 'Pengguna yang sedang online langsung terputus dan harus login ulang.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cookie) { L.push('/ip hotspot cookie remove [find]'); }
+    if (v.aktif) { L.push('/ip hotspot active remove [find]'); }
+    if (!L.length) { L.push('# Kedua opsi tidak dicentang, tidak ada yang dihapus. Centang minimal satu opsi.'); }
+    return H('Clear Hotspot Cookies') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Cookie hotspot membuat pengguna tidak perlu login ulang setiap kali tersambung. Menghapus semua cookie berarti semua perangkat harus login lagi pada kunjungan berikutnya.',
+      'Ini berguna setelah mengganti password voucher massal, setelah pergantian pengelola, atau saat ada perangkat asing yang dicurigai memakai cookie curian.',
+      'Opsi kedua memutuskan pengguna yang sedang aktif saat itu juga. Tanpa opsi ini, pengguna yang sedang online tetap online sampai sesinya habis, tetapi harus login ulang pada sambungan berikutnya.',
+      'Peringatan praktis: jangan jalankan ini pada jam sibuk tanpa pemberitahuan, karena semua pengguna akan melihat halaman login secara bersamaan.'
+    ];
+  }));
+
+TOOLS.push(T('generate-vouchers', 'hotspot', 'Generate Vouchers', 'Generate Vouchers',
+  'Cetak sejumlah voucher hotspot sekaligus: kode acak yang berbeda tiap lembar, lengkap dengan profil, batas waktu pakai, dan password yang sama dengan kodenya.',
+  [
+    f('prefix', 'Awalan kode voucher', 'text', 'VCR-', { mono: 1, help: 'Awalan ini menempel di depan setiap kode, misalnya VCR-AB12CD.' }),
+    f('jumlah', 'Jumlah voucher', 'number', 5, { v: 'num', min: 1, max: 100 }),
+    f('panjang', 'Panjang kode acak (huruf dan angka)', 'number', 6, { v: 'num', min: 4, max: 12 }),
+    f('profil', 'Profil pengguna hotspot', 'text', 'default', { mono: 1, help: 'Nama profil yang sudah ada di router, misalnya profil dari tool Profil Pengguna Voucher Hotspot.' }),
+    f('uptime', 'Batas total waktu pakai per voucher (opsional)', 'text', '', { opt: 1, ph: '1d', help: 'Contoh 5h untuk lima jam, 1d untuk satu hari. Kosongkan bila voucher berlaku tanpa batas waktu.' })
+  ],
+  function (v) {
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var n = parseInt(v.jumlah, 10) || 1;
+    var len = parseInt(v.panjang, 10) || 6;
+    var seen = {};
+    var L = [];
+    L.push('# ' + n + ' voucher hotspot, profil ' + v.profil + ', kode dibuat acak saat script digenerate');
+    for (var i = 0; i < n; i++) {
+      var kode = '';
+      do {
+        kode = '';
+        for (var j = 0; j < len; j++) { kode += chars.charAt(Math.floor(Math.random() * chars.length)); }
+      } while (seen[kode]);
+      seen[kode] = true;
+      var u = '/ip hotspot user add name=' + q(v.prefix + kode) + ' password=' + q(kode) + ' profile=' + q(v.profil);
+      if (v.uptime) { u += ' limit-uptime=' + v.uptime; }
+      u += ' comment="Voucher RacikRouter"';
+      L.push(u);
+    }
+    return H('Generate Vouchers') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Setiap voucher dibuat sebagai satu pengguna hotspot: nama pengguna berisi awalan ditambah kode acak, passwordnya sama dengan kode acaknya, jadi cukup satu kode untuk dicetak di lembar voucher.',
+      'Kode acak memakai huruf dan angka yang tidak mudah tertukar (tanpa 0, O, 1, dan I), dan dijamin berbeda satu sama lain dalam satu batch.',
+      'Profil menentukan kecepatan dan jumlah perangkat per voucher. Pastikan nama profil yang ditulis sudah ada di router, karena profil yang belum ada membuat pengguna gagal dibuat.',
+      'Kode dibuat ulang setiap kali script di-generate, jadi salin atau unduh hasilnya segera setelah jumlah dan profilnya cocok, sebelum mengubah kolom apa pun.',
+      'Batas waktu pakai menempel pada tiap pengguna, bukan pada profil, sehingga satu batch bisa punya masa aktif yang berbeda dengan batch lain walau profilnya sama.'
+    ];
+  }));
+
+TOOLS.push(T('hotspot-ip-binding', 'hotspot', 'Hotspot IP Binding (MAC)', 'Hotspot IP Binding (MAC)',
+  'Ikat satu alamat MAC ke aturan hotspot: lewati login (bypassed), pakai login normal dengan IP tetap (regular), atau tolak sama sekali (blocked).',
+  [
+    f('mac', 'Alamat MAC perangkat', 'text', 'AA:BB:CC:DD:EE:FF', { mono: 1 }),
+    f('ip', 'Alamat IP yang diikat (opsional)', 'ip', '', { opt: 1, v: 'ip', help: 'Bila diisi, perangkat ini selalu mendapat alamat ini di hotspot.' }),
+    f('tipe', 'Jenis binding', 'select', 'bypassed', { opts: [{ v: 'bypassed', l: 'Bypassed: tanpa login, langsung online' }, { v: 'regular', l: 'Regular: tetap login, IP diikat' }, { v: 'blocked', l: 'Blocked: perangkat ditolak' }] }),
+    f('server', 'Nama server hotspot (opsional)', 'text', '', { opt: 1 }),
+    f('komen', 'Komentar', 'text', '', { opt: 1 })
+  ],
+  function (v) {
+    var s = '/ip hotspot ip-binding add mac-address=' + v.mac + ' type=' + v.tipe;
+    if (v.ip) { s += ' address=' + v.ip; }
+    if (v.server) { s += ' server=' + q(v.server); }
+    if (v.komen) { s += ' comment=' + q(v.komen); }
+    return H('Hotspot IP Binding (MAC)') + s + '\n';
+  },
+  function () {
+    return [
+      'Binding mengikat alamat MAC ke satu perlakuan tetap di hotspot, sebelum halaman login sempat muncul.',
+      'Bypassed berarti perangkat langsung online tanpa login, cocok untuk perangkat milik sendiri yang tidak bisa membuka halaman login.',
+      'Regular berarti perangkat tetap harus login, tetapi selalu mendapat alamat IP yang sama, sehingga mudah dikenali dan dicatat.',
+      'Blocked berarti perangkat langsung ditolak, berguna untuk mengusir perangkat yang sudah tidak diizinkan tanpa harus mengganti password semua pengguna.',
+      'Urutan binding dibaca dari atas ke bawah, jadi bila satu MAC cocok dengan dua binding, yang paling atas yang menang. Periksa daftar binding lama sebelum menambah yang baru.'
+    ];
+  }));
+
+TOOLS.push(T('ppp-secret', 'hotspot', 'PPP Secret', 'PPP Secret',
+  'Tambah satu akun PPP (PPPoE, PPTP, L2TP, SSTP, atau OpenVPN) lengkap dengan profil dan batas kecepatan.',
+  [
+    f('user', 'Nama pengguna', 'text', '', { mono: 1 }),
+    f('pass', 'Password', 'text', '', { mono: 1 }),
+    f('service', 'Layanan (service)', 'select', 'pppoe', { opts: ['any', 'pppoe', 'pptp', 'l2tp', 'sstp', 'ovpn'] }),
+    f('profil', 'Profil PPP', 'text', 'default', { mono: 1 }),
+    f('rate', 'Batas kecepatan (rate limit, opsional)', 'text', '', { opt: 1, mono: 1, ph: '5M/5M', help: 'Format unduh/unggah dari sisi pelanggan, contoh 5M/5M. Kosongkan bila memakai rate limit dari profil.' }),
+    f('komen', 'Komentar', 'text', '', { opt: 1 })
+  ],
+  function (v) {
+    var s = '/ppp secret add name=' + q(v.user) + ' password=' + q(v.pass) + ' service=' + v.service + ' profile=' + q(v.profil);
+    if (v.rate) { s += ' rate-limit=' + v.rate; }
+    if (v.komen) { s += ' comment=' + q(v.komen); }
+    return H('PPP Secret') + s + '\n';
+  },
+  function () {
+    return [
+      'Satu baris ini mendaftarkan akun PPP: nama pengguna dan password untuk login, layanan yang boleh dipakai akun itu, dan profil yang mengatur alamat serta DNS pelanggan.',
+      'Service any berarti akun ini bisa dipakai di semua layanan PPP yang aktif, sedangkan pilihan lain mengunci akun hanya ke satu layanan.',
+      'Rate limit di akun mengalahkan rate limit di profil, jadi pelanggan dengan paket berbeda bisa memakai profil yang sama dengan batas kecepatan sendiri sendiri.',
+      'Setelah akun dibuat, pelanggan tinggal menyambung dari router rumahnya memakai nama dan password ini. Periksa status koneksinya di menu PPP Active Connections.'
     ];
   }));
 
