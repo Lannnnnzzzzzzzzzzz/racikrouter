@@ -2498,31 +2498,47 @@ TOOLS.push(T('container-adguard', 'container', 'AdGuard Home di Container', 'AdG
   ],
   function (v) {
     var cIp = ipPart(v.vethIp); var gIp = ipPart(v.gwIp);
+    var disk = (v.rootDir.split('/')[0] || 'disk1');
+    var pfx = parseInt(prefixPart(v.vethIp), 10);
+    var netBase = Math.floor(ipToNum(cIp) / Math.pow(2, 32 - pfx)) * Math.pow(2, 32 - pfx);
+    var netCidr = numToIp(netBase) + '/' + pfx;
     var L = [];
-    L.push('# Prasyarat manual sebelum script ini: aktifkan device mode enterprise dan nyalakan ulang router dengan menekan tombol fisik,');
-    L.push('# lalu pastikan paket container sudah terpasang. Lihat bagian Penjelasan.');
+    L.push('# PRASYARAT WAJIB sebelum script ini (cek dulu, script ini TIDAK memasang paket apa pun):');
+    L.push('# 1. Paket container sudah terpasang. Cek dengan /system package print, harus ada baris bernama container.');
+    L.push('#    Bila belum ada: unduh paket tambahan (extra packages) dari mikrotik.com sesuai versi RouterOS dan arsitektur routermu,');
+    L.push('#    ambil berkas container.npk, unggah ke menu Files, lalu nyalakan ulang router.');
+    L.push('# 2. Mode container sudah aktif. Cek dengan /system device-mode print, harus tertulis container: yes.');
+    L.push('#    Bila belum: jalankan /system device-mode update container=yes, lalu DALAM 5 MENIT tekan tombol reset/mode');
+    L.push('#    pada router ATAU matikan dan nyalakan lagi dayanya. Reboot biasa dari menu MEMBATALKAN perubahan ini.');
+    L.push('# 3. Arsitektur router harus ARM, ARM64, atau x86 (cek /system resource print). Router MIPS/MMIPS seperti hEX RB750Gr3 tidak bisa menjalankan container.');
+    L.push('# Bila baris /interface veth atau /container menjawab "bad command name", artinya prasyarat nomor 1 belum terpenuhi, berhenti di sini dan lengkapi dulu prasyaratnya.');
     L.push('/interface veth add name=veth-adguard address=' + v.vethIp + ' gateway=' + gIp);
     L.push('/interface bridge add name=bridge-container comment="Jembatan khusus container"');
     L.push('/interface bridge port add bridge=bridge-container interface=veth-adguard');
     L.push('/ip address add address=' + v.gwIp + ' interface=bridge-container');
-    L.push('/container config set registry-url=https://registry-1.docker.io tmpdir=usb1-part1/container-tmp');
+    L.push('/ip firewall nat add chain=srcnat src-address=' + netCidr + ' action=masquerade comment="NAT jaringan container"');
+    L.push('/container config set registry-url=https://registry-1.docker.io tmpdir=' + disk + '/container-tmp');
     L.push('/container add remote-image=' + v.image + ' interface=veth-adguard root-dir=' + v.rootDir + ' start-on-boot=yes logging=yes comment="adguard"');
     L.push('# Tunggu unduhan image selesai (cek /container print, status stopped dan tidak error), lalu nyalakan:');
     L.push('# /container start [find comment="adguard"]');
     if (v.jadikanDns) {
-      L.push('/ip dns set servers=' + cIp + ' allow-remote-requests=yes');
-      L.push('# Arahkan DNS klien DHCP ke router ini agar semua perangkat melewati penyaring.');
+      L.push('# SETELAH container berstatus running, jalankan baris DNS ini (sengaja tidak otomatis, agar DNS tidak menunjuk ke container yang belum menyala):');
+      L.push('# /ip dns set servers=' + cIp + ' allow-remote-requests=yes');
+      L.push('# Arahkan juga DNS klien DHCP ke router ini agar semua perangkat melewati penyaring.');
     }
     return H('AdGuard Home di Container') + L.join('\n') + '\n';
   },
   function () {
     return [
-      'Persyaratan yang tidak bisa dilewati: fitur container hanya ada di RouterOS 7 untuk arsitektur ARM, ARM64, dan x86, butuh paket container, mode perangkat enterprise yang diaktifkan lewat /system device-mode update mode=enterprise lalu penekanan tombol fisik saat menyala ulang, dan penyimpanan eksternal yang cukup.',
-      'Container mendapat alamat sendiri lewat interface veth yang dijembatani bridge khusus, terpisah rapi dari LAN utama.',
-      'Baris tmpdir pada contoh memakai nama partisi USB yang umum. Samakan dengan nama disk yang terlihat di menu System, Disks pada routermu.',
+      'Persyaratan yang tidak bisa dilewati: fitur container hanya ada di RouterOS 7 untuk arsitektur ARM, ARM64, dan x86. Router MIPS/MMIPS (misalnya hEX RB750Gr3) tidak didukung sama sekali. Cek arsitekturmu di /system resource print pada baris architecture-name.',
+      'Paket container tidak termasuk RouterOS bawaan. Unduh paket tambahan (extra packages) dari mikrotik.com yang versinya PERSIS sama dengan RouterOS dan arsitektur routermu, ambil container.npk, unggah lewat menu Files, lalu nyalakan ulang router. Setelah itu /system package print harus memuat baris container.',
+      'Setelah paket terpasang, aktifkan mode container dengan /system device-mode update container=yes. Dalam 5 menit kamu wajib menekan tombol reset/mode pada bodi router atau mematikan dan menyalakan dayanya; reboot biasa dari menu justru membatalkan perubahan. Verifikasi dengan /system device-mode print sampai tertulis container: yes.',
+      'Gejala prasyarat belum lengkap sangat khas: baris /interface veth dan /container menjawab "bad command name" karena kedua menu itu memang belum ada. Itu bukan salah ketik, dan menjalankan ulang script yang sama tidak akan menolong sebelum paketnya terpasang.',
+      'Container mendapat alamat sendiri lewat interface veth yang dijembatani bridge khusus, terpisah rapi dari LAN utama. Baris NAT masquerade untuk jaringan container membuat AdGuard bisa menjangkau DNS publik di internet sebagai hulunya.',
+      'Folder tmpdir sekarang mengikuti disk yang kamu tulis di kolom folder data, jadi keduanya selalu berada di penyimpanan yang sama. Samakan nama disknya dengan yang terlihat di menu System, Disks pada routermu.',
       'Unduhan image dari Docker Hub bisa memakan waktu. Mulai container hanya setelah status unduhannya selesai.',
       'Setelah AdGuard menyala, buka panelnya di http://' + '172.17.0.2:3000 dari LAN untuk menyelesaikan pengaturan awal dan memilih daftar blokir.',
-      'Bila DNS diarahkan ke container, ingat risikonya: container mati berarti resolusi nama ikut mati. Banyak teknisi memasang DNS cadangan publik sebagai jalan keluar darurat.'
+      'Baris pengarah DNS kini sengaja berbentuk komentar di urutan terakhir script: jalankan manual hanya setelah container berstatus running. Bila DNS diarahkan ke container yang belum menyala, semua perangkat kehilangan resolusi nama. Ingat juga risikonya setelah berjalan: container mati berarti resolusi nama ikut mati, jadi banyak teknisi memasang DNS cadangan publik sebagai jalan keluar darurat.'
     ];
   }));
 
