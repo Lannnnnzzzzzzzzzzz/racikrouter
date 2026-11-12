@@ -1,12 +1,16 @@
 // Service worker RacikRouter: simpan berkas aplikasi agar situs tetap bisa dibuka tanpa jaringan.
 // Strategi: cache first untuk berkas sendiri, jaringan dulu untuk sisanya.
-var CACHE = 'racikrouter-v12';
+var CACHE = 'racikrouter-v13';
 var SHELL = [
   './',
   './index.html',
   './styles.css',
+  './racik.css',
   './app.js',
   './tools.js',
+  './qrcode.js',
+  './share.js',
+  './racik.js',
   './manifest.webmanifest',
   './icon.svg'
 ];

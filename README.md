@@ -28,6 +28,9 @@ Service worker (`sw.js`) hanya aktif bila situs disajikan lewat http atau https,
 | `styles.css` | Seluruh gaya, tema terang (wajah utama) dan gelap, tata letak desktop dan mobile. |
 | `app.js` | Mesin aplikasi: router hash, render form dari skema, validasi, konsol hasil, favorit, riwayat, pencarian, ganti tema dan bahasa, sidebar dan drawer. |
 | `tools.js` | Data: 12 kategori, 109 tool, 10 cuplikan database script, dan 11 item unduhan resmi. Tiap tool berisi skema form, fungsi pembuat script, dan penjelasan Bahasa Indonesia. |
+| `racik.js` dan `racik.css` | Fitur Racik Cepat: pilih keinginan dalam kalimat sehari-hari, form gabungan dari tool terkait, keluar satu script utuh yang urutan bagiannya disusun dari dasar ke lanjutan, lengkap dengan peringatan bentrok antar keinginan. |
+| `share.js` | Fitur Bagikan Resep: isian tool atau racikan dikemas jadi satu tautan (dan QR) yang membuka isian dan script yang sama persis di perangkat penerima, dengan saklar untuk menyembunyikan kolom rahasia seperti password dan token. |
+| `qrcode.js` | Pustaka gambar QR code (Kazuhiko Arase, lisensi MIT), dipakai lokal agar QR resep tetap jalan tanpa jaringan. |
 | `manifest.webmanifest` dan `icon.svg` | Metadata agar situs bisa dipasang seperti aplikasi (PWA). |
 | `sw.js` | Service worker penyimpan berkas aplikasi untuk pemakaian luring. |
 | `DESIGN.md` | Arah desain: palet, tipografi, dan alasan setiap keputusan besar. |
@@ -53,6 +56,8 @@ Service worker (`sw.js`) hanya aktif bila situs disajikan lewat http atau https,
 
 ## Fitur aplikasi
 
+- Racik Cepat: meracik satu script utuh dari beberapa tool sekaligus cukup dengan memilih kalimat keinginan, tanpa perlu tahu nama toolnya.
+- Bagikan Resep: setiap isian tool dan racikan bisa dibagikan sebagai tautan atau QR; penerima membuka tautan dan mendapat isian serta script yang sama persis. Data resep menempel di hash URL dan tidak dikirim ke server mana pun.
 - Script diperbarui langsung pada setiap ketikan, tanpa tombol generate.
 - Validasi isian (format IP, CIDR, port, angka, rentang) dengan pesan error di bawah kolom yang salah. Tombol salin dan unduh nonaktif selama ada error.
 - Penjelasan bagian per bagian dalam Bahasa Indonesia di setiap halaman tool.

@@ -187,6 +187,7 @@ function buildSidebar() {
   var h = location.hash || '#/';
   var active = 'home';
   if (h === '#/snippets') { active = 'snippets'; }
+  else if (h === '#/racik') { active = 'racik'; }
   else if (h === '#/unduhan') { active = 'unduhan'; }
   else if (h.indexOf('#/kategori/') === 0) { active = h.slice('#/kategori/'.length); }
   else if (h.indexOf('#/tool/') === 0) { var tl = byId(h.slice('#/tool/'.length)); if (tl) { active = tl.cat; } }
@@ -202,7 +203,7 @@ function buildSidebar() {
       '<svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>' +
       '<ul class="nav-items">' + inner + '</ul></div>';
   }
-  var menuItems = item('#/', 'home', 'home', t('home')) + item('#/snippets', 'snippets', 'snippets', t('snippets'), RR.snippets.length) + item('#/unduhan', 'unduhan', 'unduhan', t('downloads'), RR.downloads.length);
+  var menuItems = item('#/', 'home', 'home', t('home')) + item('#/racik', 'racik', 'wizard', 'Racik Cepat') + item('#/snippets', 'snippets', 'snippets', t('snippets'), RR.snippets.length) + item('#/unduhan', 'unduhan', 'unduhan', t('downloads'), RR.downloads.length);
   var catItems = '';
   RR.cats.forEach(function (c) {
     var n = RR.tools.filter(function (x) { return x.cat === c.id; }).length;
@@ -706,6 +707,7 @@ function route() {
   buildSidebar();
   closeDrawer();
   if (h === '#/' || h === '#' || h === '') { renderHome(); }
+  else if (h === '#/racik') { if (window.RRrenderRacik) { window.RRrenderRacik(); } else { renderHome(); } }
   else if (h === '#/snippets') { renderSnippets(); }
   else if (h === '#/unduhan') { renderDownloads(); }
   else if (h.indexOf('#/kategori/') === 0) { renderCategory(h.slice('#/kategori/'.length)); }

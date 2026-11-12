@@ -1,0 +1,67 @@
+/* racik.css, gaya tambahan untuk Racik Cepat dan Bagikan Resep.
+   Memakai variabel tema yang sama dengan styles.css agar ikut tema terang dan gelap. */
+
+.rc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.rc-chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: inherit;
+  border-radius: 999px;
+  padding: 8px 13px;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  max-width: 100%;
+}
+.rc-chip:hover { border-color: var(--accent); }
+.rc-chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.rc-warn {
+  margin-top: 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.share-panel { margin-top: 14px; }
+.share-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.share-out { margin-top: 12px; }
+.share-out .field { margin-bottom: 4px; }
+.share-qr {
+  margin-top: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  width: fit-content;
+  max-width: 100%;
+}
+.share-qr svg {
+  display: block;
+  width: 180px;
+  height: 180px;
+  max-width: 100%;
+}
+#shareLink, #rcShareLink { width: 100%; }
