@@ -1,6 +1,6 @@
 // Service worker RacikRouter: simpan berkas aplikasi agar situs tetap bisa dibuka tanpa jaringan.
 // Strategi: cache first untuk berkas sendiri, jaringan dulu untuk sisanya.
-var CACHE = 'racikrouter-v13';
+var CACHE = 'racikrouter-v14';
 var SHELL = [
   './',
   './index.html',
@@ -31,6 +31,23 @@ self.addEventListener('activate', function (e) {
 
 self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET') return;
+  // Navigasi halaman selalu coba jaringan dulu, supaya versi terbaru situs
+  // langsung sampai ke pengguna dan tidak terjebak salinan lama di cache.
+  // Saat luring, jatuh ke salinan cache terakhir.
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).then(function (res) {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
+        return res;
+      }).catch(function () {
+        return caches.match(e.request).then(function (hit) {
+          return hit || caches.match('./index.html');
+        });
+      })
+    );
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then(function (hit) {
       if (hit) return hit;

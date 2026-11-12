@@ -55,6 +55,13 @@ function streamToBytes(stream) {
 function encodePayload(obj) {
   var json = JSON.stringify(obj);
   var bytes = new TextEncoder().encode(json);
+  // Muatan kecil dikirim mentah (awalan r.) supaya tautan bisa dibuka di semua
+  // browser, termasuk browser bawaan aplikasi chat yang belum tentu punya
+  // DecompressionStream. Muatan besar tetap digzip (awalan z.) agar tautan
+  // dan QR tidak kepanjangan.
+  if (bytes.length <= 900 || !window.CompressionStream) {
+    return Promise.resolve('r.' + b64urlEncode(bytes));
+  }
   if (window.CompressionStream) {
     try {
       var cs = new CompressionStream('gzip');
@@ -70,7 +77,10 @@ function decodePayload(str) {
   var mode = String(str).slice(0, 2);
   var bytes = b64urlDecode(String(str).slice(2));
   function parse(b) { return JSON.parse(new TextDecoder().decode(b)); }
-  if (mode === 'z.' && window.DecompressionStream) {
+  if (mode === 'z.') {
+    if (!window.DecompressionStream) {
+      return Promise.reject(new Error('browser-tidak-bisa-membuka-resep-terkompresi'));
+    }
     try {
       var ds = new DecompressionStream('gzip');
       var stream = new Blob([bytes]).stream().pipeThrough(ds);
@@ -207,12 +217,25 @@ function fillToolForm() {
   form.dispatchEvent(new Event('input', { bubbles: true }));
   form.dispatchEvent(new Event('change', { bubbles: true }));
 }
+function showResepError() {
+  var viewEl = document.getElementById('view');
+  if (!viewEl || document.getElementById('resepError')) { return; }
+  var box = document.createElement('div');
+  box.className = 'rc-warn';
+  box.id = 'resepError';
+  box.setAttribute('role', 'alert');
+  box.style.marginBottom = '14px';
+  box.textContent = 'Tautan resep ini tidak bisa dibuka di browser ini. Kemungkinan tautannya terpotong saat diteruskan, atau browsernya belum mendukung pembaca resep (sering terjadi di browser bawaan aplikasi chat). Coba buka tautannya di Chrome terbaru, atau minta pengirim menyalin ulang tautannya secara utuh.';
+  viewEl.insertBefore(box, viewEl.firstChild);
+}
 function handleResepHash() {
   var h = location.hash || '';
   if (h.indexOf('#/resep/') !== 0) { return; }
   var enc = h.slice('#/resep/'.length);
-  decodePayload(enc).then(function (payload) {
-    if (!payload || payload.v !== 1) { return; }
+  // Bungkus dalam Promise.resolve().then agar muatan rusak yang melempar
+  // secara sinkron (misalnya base64 tidak sah) tetap masuk jalur catch.
+  Promise.resolve().then(function () { return decodePayload(enc); }).then(function (payload) {
+    if (!payload || payload.v !== 1) { showResepError(); return; }
     if (payload.k === 'racik') {
       try { sessionStorage.setItem('rr-resep-racik', JSON.stringify(payload)); } catch (e) { /* abaikan */ }
       location.hash = '#/racik';
@@ -223,8 +246,10 @@ function handleResepHash() {
       } else {
         location.hash = '#/tool/' + payload.t;
       }
+    } else {
+      showResepError();
     }
-  }).catch(function () { /* muatan rusak, abaikan */ });
+  }).catch(function () { showResepError(); });
 }
 
 /* ---------- Pengamatan halaman ---------- */
