@@ -650,6 +650,310 @@ TOOLS.push(T('change-mac', 'dasar', 'Change MAC Address', 'Change MAC Address',
     ];
   }));
 
+
+TOOLS.push(T('remove-arp-table', 'dasar', 'Remove ARP Table', 'Remove ARP Table',
+  'Kosongkan tabel ARP router: hapus entri dinamis yang dipelajari otomatis, dan bila dipilih, entri statis yang dipasang manual. Tabel terisi lagi sendiri begitu perangkat berkomunikasi.',
+  [
+    f('dinamis', 'Hapus entri ARP dinamis', 'check', true, { help: 'Entri yang dipelajari otomatis dari trafik jaringan.' }),
+    f('statis', 'Hapus juga entri ARP statis', 'check', false, { help: 'Entri statis adalah pasangan IP dan MAC yang dipasang manual, misalnya untuk mengunci perangkat ke alamat tertentu.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.dinamis) { L.push('/ip arp remove [find where dynamic=yes]'); }
+    if (v.statis) { L.push('/ip arp remove [find where dynamic=no]'); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang dihapus. Centang minimal satu jenis entri.'); }
+    return H('Remove ARP Table') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Tabel ARP adalah buku alamat lapisan dua: pasangan alamat IP dan alamat MAC perangkat yang pernah berkomunikasi lewat router.',
+      'Entri dinamis dipelajari otomatis dan kedaluwarsa sendiri. Menghapusnya hanya memaksa router mempelajari ulang alamat perangkat, jadi gangguan yang timbul hanya jeda sesaat.',
+      'Entri statis tidak dipelajari ulang. Bila dihapus, ikatan IP dan MAC buatanmu hilang dan harus dipasang lagi satu per satu.',
+      'Pakai tool ini saat tabel ARP diduga berisi entri palsu (misalnya serangan ARP spoofing), atau setelah mengganti perangkat jaringan yang alamat MAC-nya berubah.'
+    ];
+  }));
+
+TOOLS.push(T('remove-dhcp', 'dasar', 'Remove DHCP Server dan Client', 'Remove DHCP Server and Client',
+  'Hapus konfigurasi DHCP sekaligus: server, jaringan server, client, dan bila dipilih, lease serta pool. Perangkat LAN berhenti mendapat alamat otomatis setelah server dihapus.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang dihapus.' }),
+    f('server', 'Hapus semua DHCP server', 'check', true),
+    f('jaringan', 'Hapus juga jaringan DHCP server', 'check', true, { help: 'Jaringan DHCP menyimpan gateway, DNS, dan subnet yang dibagikan server.' }),
+    f('client', 'Hapus semua DHCP client', 'check', true, { help: 'Hati-hati: bila WAN memakai DHCP client, internet router langsung putus setelah client dihapus.' }),
+    f('lease', 'Hapus semua lease DHCP', 'check', false, { help: 'Lease adalah catatan alamat yang sudah dibagikan ke perangkat. Menghapusnya membuat semua perangkat meminta alamat baru.' }),
+    f('pool', 'Hapus juga semua IP pool', 'check', false, { help: 'Pool dipakai server DHCP dan juga layanan lain seperti PPPoE. Periksa dulu pemakai pool sebelum menghapus.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-dhcp'); }
+    if (v.server) { L.push('/ip dhcp-server remove [find]'); }
+    if (v.jaringan) { L.push('/ip dhcp-server network remove [find]'); }
+    if (v.client) { L.push('/ip dhcp-client remove [find]'); }
+    if (v.lease) { L.push('/ip dhcp-server lease remove [find]'); }
+    if (v.pool) { L.push('/ip pool remove [find]'); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang dihapus. Centang minimal satu kelompok.'); }
+    return H('Remove DHCP Server dan Client') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'DHCP server membagikan alamat IP otomatis ke perangkat LAN. Setelah dihapus, perangkat baru tidak lagi mendapat alamat sampai server dibuat ulang.',
+      'Jaringan DHCP menyimpan gateway dan DNS yang dibagikan. Menghapusnya bersama server membuat konfigurasi lama benar-benar bersih, tanpa sisa.',
+      'DHCP client adalah sisi sebaliknya: router meminta alamat ke ISP atau router atas. Menghapus client WAN memutus internet router, jadi lakukan ini hanya bila kamu sudah menyiapkan penggantinya.',
+      'Lease yang dihapus membuat semua perangkat meminta alamat baru saat tersambung lagi. Biasanya tidak terasa, kecuali perangkat yang alamatnya diikat statis ke lease tertentu.',
+      'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.'
+    ];
+  }));
+
+TOOLS.push(T('remove-dns', 'dasar', 'Remove DNS', 'Remove DNS',
+  'Bersihkan DNS router: kosongkan cache, hapus semua entri DNS statis, dan bila dipilih, kembalikan setelan DNS ke bawaan. Entri statis yang dipakai untuk memblokir situs ikut hilang.',
+  [
+    f('cache', 'Kosongkan cache DNS', 'check', true, { help: 'Cache berisi jawaban DNS yang sudah pernah dicari. Mengosongkannya memaksa router bertanya ulang ke server DNS.' }),
+    f('statis', 'Hapus semua entri DNS statis', 'check', true, { help: 'Entri statis dipakai untuk nama lokal dan untuk memblokir situs dengan mengarahkannya ke alamat kosong.' }),
+    f('setelan', 'Kembalikan setelan DNS ke bawaan', 'check', false, { help: 'Mengosongkan daftar server DNS dan mematikan permintaan jarak jauh (allow-remote-requests).' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cache) { L.push('/ip dns cache flush'); }
+    if (v.statis) { L.push('/ip dns static remove [find]'); }
+    if (v.setelan) { L.push('/ip dns set servers="" allow-remote-requests=no'); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang dihapus. Centang minimal satu kelompok.'); }
+    return H('Remove DNS') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Cache DNS mempercepat browsing karena jawaban yang sudah pernah dicari tidak perlu ditanyakan ulang. Mengosongkannya aman, hanya membuat pencarian pertama setelah itu sedikit lebih lambat.',
+      'Entri DNS statis menimpa jawaban dari internet. Banyak pemblokir situs bekerja dengan cara ini, jadi menghapus semua entri statis berarti membuka kembali situs yang tadinya diblokir.',
+      'Setelan bawaan berarti router tidak lagi meneruskan permintaan DNS dari perangkat LAN. Perangkat harus memakai DNS sendiri, atau kamu harus mengisi server DNS lagi setelah ini.',
+      'Setelah dibersihkan, uji dengan membuka satu situs dari perangkat LAN. Bila situs tidak terbuka, periksa dulu daftar server DNS sebelum menyalahkan ISP.'
+    ];
+  }));
+
+TOOLS.push(T('remove-all-ip', 'dasar', 'Remove All IP Address', 'Remove All IP Address',
+  'Hapus semua alamat IP dari semua interface. PERINGATAN: setelah alamat IP hilang, router tidak lagi bisa dijangkau lewat IP, hanya lewat MAC di Winbox. Jalankan hanya bila kamu tersambung lewat MAC atau konsol.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang dihapus.' }),
+    f('kecuali', 'Alamat IP yang dipertahankan (opsional)', 'cidr', '', { opt: 1, v: 'cidr', mono: 1, ph: '192.168.88.1/24', help: 'Bila diisi, alamat ini tidak dihapus supaya kamu tetap bisa masuk lewat IP itu. Tulis lengkap dengan prefix, contoh 192.168.88.1/24.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-ip'); }
+    if (v.kecuali) { L.push('/ip address remove [find where address!=' + q(v.kecuali) + ']'); }
+    else { L.push('/ip address remove [find]'); }
+    return H('Remove All IP Address') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Alamat IP adalah identitas router di tiap jaringan. Menghapus semuanya sama dengan melepas router dari semua jaringan sekaligus, termasuk jaringan tempat kamu tersambung sekarang.',
+      'Setelah dijalankan, satu-satunya jalan masuk adalah lewat alamat MAC (Winbox Neighbors) atau kabel konsol. Pastikan kamu tahu cara masuk lewat MAC sebelum menjalankan script ini.',
+      'Kolom alamat yang dipertahankan berguna untuk membersihkan alamat lama sambil tetap memegang satu alamat darurat. Isi dengan alamat yang kamu pakai untuk masuk saat ini.',
+      'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal lewat MAC.'
+    ];
+  }));
+
+TOOLS.push(T('remove-all-pool', 'dasar', 'Remove All IP Pool', 'Remove All IP Pool',
+  'Hapus semua IP pool. Pool yang masih dipakai DHCP server atau PPPoE membuat layanan itu gagal membagikan alamat, jadi periksa pemakainya dulu.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang dihapus.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-pool'); }
+    L.push('/ip pool remove [find]');
+    return H('Remove All IP Pool') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'IP pool adalah rentang alamat yang siap dibagikan, misalnya 192.168.88.10 sampai 192.168.88.254 untuk DHCP server.',
+      'Pool tidak berdiri sendiri: DHCP server, PPPoE, dan layanan lain mengambil alamat dari pool. Menghapus pool membuat layanan itu kehabisan alamat untuk dibagikan.',
+      'Sebelum menjalankan, periksa di menu IP Pool kolom mana saja yang dipakai, dan siapkan pool pengganti bila layanan harus tetap jalan.',
+      'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.'
+    ];
+  }));
+
+TOOLS.push(T('remove-interface-bridge', 'dasar', 'Remove Interface dan Bridge', 'Remove Interface and Bridge',
+  'Hapus bridge beserta port anggotanya, dan bila dipilih, interface VLAN. PERINGATAN: perangkat yang tersambung lewat bridge langsung terputus. Jalankan hanya lewat MAC Winbox atau konsol.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang dihapus.' }),
+    f('port', 'Lepas dan hapus semua bridge port', 'check', true, { help: 'Port dilepas dulu sebelum bridge dihapus, supaya tidak ada interface yang tertinggal menggantung.' }),
+    f('bridge', 'Hapus semua bridge', 'check', true),
+    f('vlan', 'Hapus juga semua interface VLAN', 'check', false, { help: 'Interface VLAN biasanya menempel di atas bridge. Menghapusnya memutus semua segmen VLAN sekaligus.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-bridge'); }
+    if (v.port) { L.push('/interface bridge port remove [find]'); }
+    if (v.bridge) { L.push('/interface bridge remove [find]'); }
+    if (v.vlan) { L.push('/interface vlan remove [find]'); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang dihapus. Centang minimal satu kelompok.'); }
+    return H('Remove Interface dan Bridge') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Bridge menggabungkan beberapa port fisik menjadi satu switch virtual. Semua perangkat di port itu berkomunikasi lewat bridge, jadi menghapus bridge memutus mereka semua.',
+      'Bridge port dilepas dulu sebelum bridge dihapus, karena port yang masih menempel membuat penghapusan bridge gagal.',
+      'Interface VLAN menempel di atas bridge dan membawa segmen seperti Guru atau Siswa. Menghapusnya memutus seluruh segmen itu, termasuk DHCP dan alamat IP di atasnya.',
+      'Setelah bridge hilang, interface fisik kembali berdiri sendiri. Kamu harus membangun ulang bridge, alamat IP, dan DHCP dari nol bila jaringan ini masih dipakai.',
+      'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.'
+    ];
+  }));
+
+TOOLS.push(T('reset-all-counters', 'dasar', 'Reset All Counters', 'Reset All Counters',
+  'Nol-kan semua penghitung statistik: interface, firewall, dan antrean. Yang di-nol-kan hanya angka statistiknya, trafik dan aturan tidak berubah.',
+  [
+    f('iface', 'Nol-kan penghitung semua interface', 'check', true, { help: 'Jumlah paket dan byte yang lewat tiap interface kembali ke nol.' }),
+    f('firewall', 'Nol-kan penghitung filter, NAT, dan mangle', 'check', true, { help: 'Jumlah paket dan byte per aturan kembali ke nol, sehingga mudah melihat aturan mana yang bekerja setelah ini.' }),
+    f('queue', 'Nol-kan penghitung simple queue dan queue tree', 'check', true)
+  ],
+  function (v) {
+    var L = [];
+    if (v.iface) { L.push('/interface reset-counters'); }
+    if (v.firewall) {
+      L.push('/ip firewall filter reset-counters [find]');
+      L.push('/ip firewall nat reset-counters [find]');
+      L.push('/ip firewall mangle reset-counters [find]');
+    }
+    if (v.queue) {
+      L.push('/queue simple reset-counters [find]');
+      L.push('/queue tree reset-counters [find]');
+    }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang di-nol-kan. Centang minimal satu kelompok.'); }
+    return H('Reset All Counters') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Penghitung (counter) hanyalah angka statistik: berapa paket dan byte yang sudah lewat. Me-nol-kannya tidak memengaruhi kecepatan, aturan, atau koneksi yang sedang berjalan.',
+      'Ini berguna sebelum pengujian: nol-kan dulu, jalankan uji selama beberapa menit, lalu baca angkanya untuk melihat trafik yang benar-benar terjadi selama uji.',
+      'Penghitung firewall yang di-nol-kan membuat aturan yang tadinya ramai terlihat sepi. Tunggu beberapa saat sebelum menyimpulkan sebuah aturan tidak pernah dipakai.',
+      'Angka lama yang sudah di-nol-kan tidak bisa dikembalikan. Bila angka itu dibutuhkan untuk laporan, catat atau ekspor dulu sebelum menjalankan script ini.'
+    ];
+  }));
+
+TOOLS.push(T('reset-mac-interfaces', 'dasar', 'Reset MAC All Interfaces', 'Reset MAC All Interfaces',
+  'Kembalikan alamat MAC semua interface ethernet ke alamat pabrik. PERINGATAN: perangkat yang mengunci layanan ke MAC lama (ISP, DHCP binding) akan kehilangan pengenalnya.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang diubah.' }),
+    f('ethernet', 'Reset MAC semua interface ethernet', 'check', true),
+    f('wireless', 'Reset juga MAC interface wireless', 'check', false, { help: 'Hanya bila paket wireless terpasang di router ini.' }),
+    f('kecuali', 'Interface yang dilewati (opsional)', 'text', '', { opt: 1, mono: 1, ph: 'ether1', help: 'Nama satu interface yang MAC-nya tidak diubah, contoh ether1 (biasanya interface WAN yang dikunci ISP).' })
+  ],
+  function (v) {
+    var L = [];
+    var sel = v.kecuali ? ' [find where name!=' + q(v.kecuali) + ']' : ' [find]';
+    if (v.cadangan) { L.push('/export file=backup-sebelum-reset-mac'); }
+    if (v.ethernet) { L.push('/interface ethernet reset-mac-address' + sel); }
+    if (v.wireless) { L.push('/interface wireless reset-mac-address' + sel); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang diubah. Centang minimal satu jenis interface.'); }
+    return H('Reset MAC All Interfaces') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Alamat MAC adalah identitas perangkat di lapisan dua. Meresetnya berarti mengembalikan alamat bawaan pabrik yang tertulis di label perangkat.',
+      'Perubahan MAC bisa membuat link putus sesaat, karena perangkat di ujung lain harus mempelajari ulang alamatnya lewat ARP.',
+      'ISP yang mengunci layanan ke alamat MAC akan menolak koneksi bila MAC berubah. Itulah gunanya kolom pengecualian: lewati interface WAN bila ISP-mu memakai penguncian seperti itu.',
+      'Catat alamat MAC sekarang sebelum menjalankan script ini. Bila ternyata layanan menuntut MAC lama, kamu butuh alamat itu untuk mengembalikannya manual.'
+    ];
+  }));
+
+TOOLS.push(T('setup-romon', 'dasar', 'Setup RoMON', 'Setup RoMON',
+  'Nyalakan RoMON (Router Management Overlay Network) supaya router ini bisa ditemukan dan dikelola lewat MAC dari segmen lain, lengkap dengan secret dan ID.',
+  [
+    f('aktif', 'Nyalakan RoMON', 'check', true, { help: 'Bila dimatikan, router ini tidak lagi terlihat di daftar RoMON router lain.' }),
+    f('secret', 'Secret RoMON (opsional)', 'text', '', { opt: 1, mono: 1, ph: 'rahasia-bersama', help: 'Kata sandi bersama antar router RoMON. Router dengan secret berbeda tidak saling terlihat. Kosongkan bila jaringanmu tertutup.' }),
+    f('id', 'ID RoMON router ini (opsional)', 'text', '', { opt: 1, mono: 1, ph: 'Router-Utama', help: 'Nama yang tampil di daftar RoMON. Kosongkan untuk memakai identitas router.' })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/tool romon set enabled=' + (v.aktif ? 'yes' : 'no'));
+    if (v.secret) { L.push('/tool romon set secrets=' + q(v.secret)); }
+    if (v.id) { L.push('/tool romon set id=' + q(v.id)); }
+    return H('Setup RoMON') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'RoMON membuat router-router MikroTik saling menemukan lewat alamat MAC, bahkan bila mereka berada di segmen jaringan yang berbeda dan tidak saling terjangkau lewat IP.',
+      'Dengan RoMON aktif, kamu bisa membuka Winbox ke router tetangga lewat daftar RoMON, tanpa harus tahu alamat IP-nya. Ini sangat membantu saat alamat IP router lupa.',
+      'Secret adalah kata sandi bersama: semua router yang ingin saling terlihat harus memakai secret yang sama. Router dengan secret berbeda tidak akan muncul di daftar satu sama lain.',
+      'ID adalah nama yang tampil di daftar RoMON. Isi dengan nama yang mudah dikenali, misalnya nama lokasi router, supaya tidak tertukar dengan router lain.'
+    ];
+  }));
+
+TOOLS.push(T('shutdown-reset-reboot', 'dasar', 'Shutdown, Reset, dan Reboot', 'Shutdown, Reset, and Reboot',
+  'Matikan, nyalakan ulang, atau reset router ke setelan pabrik. Terminal akan meminta konfirmasi sebelum perintah dijalankan, jadi kamu tetap punya kesempatan membatalkan.',
+  [
+    f('aksi', 'Aksi', 'select', 'reboot', { opts: [{ v: 'reboot', l: 'Reboot: nyalakan ulang router' }, { v: 'shutdown', l: 'Shutdown: matikan router' }, { v: 'reset', l: 'Reset: kembalikan ke setelan pabrik' }] }),
+    f('tanpaDefault', 'Reset tanpa konfigurasi bawaan (no-defaults)', 'check', false, { help: 'Dipakai bila aksi di atas "Reset". Router kembali benar-benar kosong, tanpa alamat IP bawaan 192.168.88.1.' }),
+    f('tanpaBackup', 'Reset tanpa membuat backup otomatis (skip-backup)', 'check', false, { help: 'Dipakai bila aksi di atas "Reset". Tanpa ini, RouterOS menyimpan backup otomatis sebelum mereset.' }),
+    f('simpanUser', 'Reset tetap mempertahankan pengguna (keep-users)', 'check', true, { help: 'Dipakai bila aksi di atas "Reset". Nama dan password admin lama tetap bisa dipakai setelah reset.' })
+  ],
+  function (v) {
+    if (v.aksi === 'reboot') { return H('Shutdown, Reset, dan Reboot') + '/system reboot\n'; }
+    if (v.aksi === 'shutdown') { return H('Shutdown, Reset, dan Reboot') + '/system shutdown\n'; }
+    var s = '/system reset-configuration';
+    if (v.tanpaDefault) { s += ' no-defaults=yes'; }
+    if (v.tanpaBackup) { s += ' skip-backup=yes'; }
+    if (v.simpanUser) { s += ' keep-users=yes'; }
+    return H('Shutdown, Reset, dan Reboot') + s + '\n';
+  },
+  function () {
+    return [
+      'Reboot mematikan router sesaat lalu menyalakannya lagi dengan konfigurasi yang sama. Semua koneksi putus sebentar dan tersambung lagi setelah router siap.',
+      'Shutdown mematikan router sampai dinyalakan manual lewat tombol power. Jangan pilih ini untuk router jauh yang tidak ada orang di dekatnya.',
+      'Reset menghapus seluruh konfigurasi dan mengembalikan router ke setelan pabrik. Tanpa no-defaults, router kembali dengan alamat IP bawaan 192.168.88.1 dan tanpa password.',
+      'Opsi keep-users mempertahankan akun admin lama, jadi kamu tetap bisa login dengan password yang sama setelah reset. Tanpa opsi ini, login memakai admin tanpa password.',
+      'Terminal RouterOS selalu meminta konfirmasi untuk ketiga aksi ini. Baca lagi pilihanmu saat konfirmasi muncul, karena reset tidak bisa dibatalkan setelah berjalan.'
+    ];
+  }));
+
+TOOLS.push(T('system-note', 'dasar', 'System Note Terminal', 'System Note Terminal',
+  'Pasang catatan yang muncul di terminal setiap kali admin login ke router. Cocok untuk pengumuman, peringatan, atau info kontak pengelola.',
+  [
+    f('catatan', 'Isi catatan', 'textarea', 'Selamat datang di router ini.\nHubungi admin bila ada gangguan.', { mono: 1, help: 'Tulis singkat dan jelas. Baris baru tetap tampil sebagai baris baru di terminal.' }),
+    f('login', 'Tampilkan saat login', 'check', true),
+    f('reboot', 'Tampilkan juga setiap router reboot', 'check', false)
+  ],
+  function (v) {
+    var isi = q(v.catatan).replace(/\n/g, '\\n');
+    var L = [];
+    L.push('/system note set show-at-login=' + (v.login ? 'yes' : 'no') + ' show-at-reboot=' + (v.reboot ? 'yes' : 'no'));
+    if (v.catatan) { L.push('/system note set note=' + isi); }
+    return H('System Note Terminal') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'System note adalah pesan yang tampil di terminal begitu admin login, sebelum prompt perintah muncul. Semua admin yang login akan membaca pesan yang sama.',
+      'Pakai catatan untuk hal yang wajib dibaca: peringatan jangan mengubah setelan tertentu, nomor kontak pengelola, atau jadwal maintenance berikutnya.',
+      'Opsi tampil saat reboot membuat catatan muncul juga di log boot, sehingga jejaknya tetap ada walau tidak ada yang login setelah router menyala.',
+      'Catatan yang terlalu panjang mengganggu karena menutupi layar terminal. Tulis maksimal dua sampai tiga baris, dan hapus catatan lama yang sudah tidak berlaku.'
+    ];
+  }));
+
+TOOLS.push(T('traceroute-tool', 'dasar', 'Traceroute Tool', 'Traceroute Tool',
+  'Lacak rute paket dari router ke satu tujuan: lihat tiap lompatan (hop) beserta waktunya, untuk mencari di mana paket tersendat atau hilang.',
+  [
+    f('target1', 'Target pertama (IP atau nama host)', 'text', '8.8.8.8', { mono: 1 }),
+    f('target2', 'Target kedua (opsional)', 'text', '', { opt: 1, mono: 1, ph: '1.1.1.1' }),
+    f('maxhop', 'Jumlah hop maksimum', 'number', 30, { v: 'num', min: 1, max: 255 }),
+    f('protokol', 'Protokol', 'select', 'icmp', { opts: [{ v: 'icmp', l: 'ICMP (bawaan)' }, { v: 'udp', l: 'UDP' }, { v: 'tcp', l: 'TCP' }] }),
+    f('dns', 'Tampilkan nama host tiap hop (use-dns)', 'check', true)
+  ],
+  function (v) {
+    function baris(t) {
+      return '/tool traceroute ' + t + ' max-hops=' + v.maxhop + ' protocol=' + v.protokol + ' use-dns=' + (v.dns ? 'yes' : 'no');
+    }
+    var L = [];
+    L.push(baris(v.target1));
+    if (v.target2) { L.push(baris(v.target2)); }
+    return H('Traceroute Tool') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Traceroute mengirim paket dengan batas hop yang naik satu per satu. Tiap router di jalan membalas saat paketnya kedaluwarsa, sehingga kamu melihat daftar lengkap perjalanan paket.',
+      'Bintang (*) pada satu hop berarti router itu tidak membalas, bukan berarti paket hilang. Banyak router sengaja tidak membalas traceroute, jadi baca bintang sebagai "tidak menjawab", bukan "rusak".',
+      'Waktu yang melonjak tiba-tiba di satu hop menunjukkan di mana kemacetan mulai terjadi. Bila lonjakan muncul di hop pertama, masalahnya ada di jaringan lokalmu.',
+      'Protokol UDP dan TCP berguna bila ICMP diblokir di tengah jalan. Hasil ketiganya boleh berbeda, karena tiap protokol bisa menempuh jalur yang berbeda di internet.'
+    ];
+  }));
+
 /* ================= Kategori: Routing ================= */
 
 TOOLS.push(T('static-route', 'routing', 'Rute Statis', 'Static Route',
@@ -1077,6 +1381,34 @@ TOOLS.push(T('vlan-gedung', 'routing', 'VLAN per Gedung (Segmentasi Sekolah dan 
       'DHCP per VLAN membuat tiap segmen mengelola alamatnya sendiri. Perangkat di VLAN Siswa tidak akan pernah menerima alamat dari jaringan Guru.',
       'Isolasi bekerja dengan satu aturan drop antara daftar interface VLAN. Setiap VLAN tetap bebas ke internet lewat gateway-nya, tetapi pergerakan menyamping antar VLAN ditutup.',
       'Kolom pengecualian berguna untuk VLAN pengelola, misalnya Guru atau IT, yang memang perlu menjangkau CCTV dan perangkat VLAN lain.'
+    ];
+  }));
+
+
+TOOLS.push(T('remove-all-routing', 'routing', 'Remove All Routing', 'Remove All Routing',
+  'Hapus semua rute statis sekaligus, dan bila dipilih, aturan routing serta tabel routing kustom. Tanpa rute, router tidak tahu ke mana meneruskan paket.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang dihapus.' }),
+    f('rute', 'Hapus semua rute statis', 'check', true, { help: 'Hanya rute statis yang dihapus. Rute dinamis dari OSPF atau BGP tidak bisa dihapus dengan cara ini.' }),
+    f('aturan', 'Hapus semua routing rule', 'check', false, { help: 'Routing rule mengarahkan trafik ke tabel routing tertentu berdasarkan alamat sumber atau penanda.' }),
+    f('tabel', 'Hapus semua tabel routing kustom', 'check', false, { help: 'Tabel main tidak bisa dihapus, jadi hanya tabel tambahan yang ikut terhapus.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-routing'); }
+    if (v.rute) { L.push('/ip route remove [find where dynamic=no]'); }
+    if (v.aturan) { L.push('/routing rule remove [find]'); }
+    if (v.tabel) { L.push('/routing table remove [find where name!="main"]'); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang dihapus. Centang minimal satu kelompok.'); }
+    return H('Remove All Routing') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Rute statis adalah petunjuk jalan yang ditulis manual: "ke jaringan ini, lewat gateway itu". Menghapus semuanya membuat router hanya mengandalkan rute terhubung langsung dan rute dinamis.',
+      'Rute dinamis dari OSPF atau BGP tidak ikut terhapus, karena rute itu dibuat otomatis oleh protokol routing dan akan muncul lagi selama protokolnya masih jalan.',
+      'Routing rule dan tabel kustom dipakai policy routing dan load balancing. Menghapusnya membuat trafik yang tadinya dipisah ke jalur khusus kembali mengikuti tabel utama.',
+      'Setelah rute dihapus, uji koneksi ke internet dan ke jaringan lain sebelum meninggalkan router. Bila ada yang putus, pulihkan dari backup .rsc yang dibuat di awal.',
+      'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.'
     ];
   }));
 
@@ -1702,6 +2034,40 @@ TOOLS.push(T('protect-neighbor', 'firewall', 'Protect Neighbors Discovery', 'Pro
     ];
   }));
 
+
+TOOLS.push(T('remove-all-firewall', 'firewall', 'Remove All Firewall', 'Remove All Firewall',
+  'Hapus semua aturan firewall sekaligus: filter, NAT, mangle, dan pilihan lain. BERBAHAYA: router kehilangan semua proteksi dan semua port forwarding. Buat backup dulu sebelum menjalankan.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang dihapus.' }),
+    f('filter', 'Hapus semua aturan filter', 'check', true),
+    f('nat', 'Hapus semua aturan NAT', 'check', true),
+    f('mangle', 'Hapus semua aturan mangle', 'check', true),
+    f('raw', 'Hapus juga aturan raw', 'check', false, { help: 'Raw memproses paket sebelum connection tracking. Biasanya hanya dipakai teknisi lanjutan.' }),
+    f('addrlist', 'Hapus semua address list', 'check', false, { help: 'Address list dipakai aturan blokir dan pisah trafik. Menghapusnya membuat aturan yang merujuk daftar itu kehilangan targetnya.' }),
+    f('l7', 'Hapus semua protokol Layer 7', 'check', false, { help: 'Protokol Layer 7 dipakai untuk mengenali isi paket, misalnya untuk memblokir situs tertentu.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-firewall'); }
+    if (v.filter) { L.push('/ip firewall filter remove [find]'); }
+    if (v.nat) { L.push('/ip firewall nat remove [find]'); }
+    if (v.mangle) { L.push('/ip firewall mangle remove [find]'); }
+    if (v.raw) { L.push('/ip firewall raw remove [find]'); }
+    if (v.addrlist) { L.push('/ip firewall address-list remove [find]'); }
+    if (v.l7) { L.push('/ip firewall layer7-protocol remove [find]'); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang dihapus. Centang minimal satu kelompok.'); }
+    return H('Remove All Firewall') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Filter adalah dinding pelindung router: menghapus semua aturannya berarti semua paket dibiarkan lewat, termasuk yang tadinya diblokir dari internet.',
+      'NAT mengatur masquerade dan port forwarding. Setelah dihapus, perangkat LAN tidak lagi bisa ke internet dan layanan yang dipublikasikan lewat port forwarding ikut mati.',
+      'Mangle dipakai untuk menandai paket (pisah trafik, prioritas, dan load balancing). Menghapusnya membuat queue dan policy routing yang bergantung pada tanda itu berhenti bekerja.',
+      'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.',
+      'Jalankan script ini hanya dari koneksi yang aman (kabel atau MAC Winbox), karena setelah filter hilang, akses ke router menjadi terbuka dari semua arah.'
+    ];
+  }));
+
 /* ================= Kategori: Queue ================= */
 
 TOOLS.push(T('simple-queue', 'queue', 'Simple Queue per Target', 'Simple Queue per Target',
@@ -1834,6 +2200,33 @@ TOOLS.push(T('queue-prioritas-aplikasi', 'queue', 'Prioritas Aplikasi di Queue T
       'Porsi dihitung dari total induk: YouTube ' + v.pyt + ' persen, TikTok ' + v.ptt + ' persen, WhatsApp ' + v.pwa + ' persen. Sisa pita dipakai trafik lain di luar antrean anak ini.',
       'WhatsApp diberi prioritas lebih tinggi (angka kecil) karena panggilannya peka jeda, walau kebutuhan pitanya kecil.',
       'Prioritas bekerja saat induk penuh: antrean berprioritas kecil dilayani lebih dulu dari antrean lain.'
+    ];
+  }));
+
+
+TOOLS.push(T('remove-all-queue', 'queue', 'Remove All Queue', 'Remove All Queue',
+  'Hapus semua antrean sekaligus: simple queue, queue tree, dan tipe antrean kustom. Setelah dihapus, semua pembagian bandwidth berhenti dan trafik berjalan tanpa batas.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang dihapus.' }),
+    f('simple', 'Hapus semua simple queue', 'check', true),
+    f('tree', 'Hapus semua queue tree', 'check', true),
+    f('tipe', 'Hapus juga tipe antrean kustom', 'check', false, { help: 'Hanya tipe buatan sendiri yang dihapus. Tipe bawaan RouterOS (default, default-small, dan sejenisnya) tidak bisa dihapus.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-queue'); }
+    if (v.simple) { L.push('/queue simple remove [find]'); }
+    if (v.tree) { L.push('/queue tree remove [find]'); }
+    if (v.tipe) { L.push('/queue type remove [find where builtin=no]'); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang dihapus. Centang minimal satu kelompok.'); }
+    return H('Remove All Queue') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Simple queue membatasi kecepatan per alamat IP atau per subnet. Setelah dihapus, tidak ada lagi batas kecepatan, jadi satu perangkat bisa menghabiskan seluruh bandwidth.',
+      'Queue tree mengatur pembagian bandwidth bertingkat dengan prioritas. Menghapusnya membuat antrean induk dan anak hilang bersamaan.',
+      'Tipe antrean kustom (misalnya PCQ buatan sendiri) hanya dihapus bila opsinya dicentang. Tipe bawaan RouterOS aman karena memang tidak bisa dihapus.',
+      'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.'
     ];
   }));
 
@@ -2164,6 +2557,97 @@ TOOLS.push(T('ppp-secret', 'hotspot', 'PPP Secret', 'PPP Secret',
       'Service any berarti akun ini bisa dipakai di semua layanan PPP yang aktif, sedangkan pilihan lain mengunci akun hanya ke satu layanan.',
       'Rate limit di akun mengalahkan rate limit di profil, jadi pelanggan dengan paket berbeda bisa memakai profil yang sama dengan batas kecepatan sendiri sendiri.',
       'Setelah akun dibuat, pelanggan tinggal menyambung dari router rumahnya memakai nama dan password ini. Periksa status koneksinya di menu PPP Active Connections.'
+    ];
+  }));
+
+
+TOOLS.push(T('remove-all-hotspot', 'hotspot', 'Remove All Hotspot', 'Remove All Hotspot',
+  'Hapus layanan hotspot sekaligus: server, pengguna, profil, binding, cookie, dan walled garden. Semua pengguna hotspot langsung terputus.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang dihapus.' }),
+    f('server', 'Hapus semua server hotspot', 'check', true),
+    f('user', 'Hapus semua pengguna hotspot', 'check', true),
+    f('profil', 'Hapus profil pengguna (kecuali default)', 'check', false, { help: 'Profil default tidak bisa dihapus, jadi hanya profil buatan sendiri yang ikut terhapus.' }),
+    f('binding', 'Hapus semua IP binding', 'check', false, { help: 'IP binding berisi perangkat yang dibebaskan dari login atau yang ditolak.' }),
+    f('cookie', 'Hapus semua cookie hotspot', 'check', true, { help: 'Cookie membuat pengguna tidak perlu login ulang. Menghapusnya memaksa semua perangkat login lagi.' }),
+    f('walled', 'Hapus semua walled garden', 'check', false, { help: 'Walled garden berisi situs yang bisa dibuka tanpa login, seperti halaman pembayaran.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-hotspot'); }
+    if (v.server) { L.push('/ip hotspot remove [find]'); }
+    if (v.user) { L.push('/ip hotspot user remove [find]'); }
+    if (v.profil) { L.push('/ip hotspot user profile remove [find where name!="default"]'); }
+    if (v.binding) { L.push('/ip hotspot ip-binding remove [find]'); }
+    if (v.cookie) { L.push('/ip hotspot cookie remove [find]'); }
+    if (v.walled) {
+      L.push('/ip hotspot walled-garden remove [find]');
+      L.push('/ip hotspot walled-garden ip remove [find]');
+    }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang dihapus. Centang minimal satu kelompok.'); }
+    return H('Remove All Hotspot') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Server hotspot adalah layanan yang menampilkan halaman login. Menghapusnya mematikan halaman login, sehingga perangkat baru tidak lagi diminta login dan tidak lagi mendapat akses.',
+      'Pengguna hotspot berisi semua akun voucher. Setelah dihapus, tidak ada akun yang bisa dipakai login, termasuk akun yang sedang aktif.',
+      'Profil pengguna mengatur kecepatan dan batas tiap akun. Profil default tidak bisa dihapus, jadi hanya profil buatanmu yang ikut hilang.',
+      'Cookie dan IP binding adalah jalan pintas login. Menghapusnya berarti semua perangkat harus login ulang dari awal, tanpa pengecualian.',
+      'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.'
+    ];
+  }));
+
+TOOLS.push(T('remove-all-ppp', 'hotspot', 'Remove All PPP', 'Remove All PPP',
+  'Hapus semua akun dan layanan PPP sekaligus: secret, koneksi aktif, profil, dan server PPPoE. Semua pelanggan PPPoE langsung terputus.',
+  [
+    f('cadangan', 'Buat backup konfigurasi (.rsc) dulu', 'check', true, { help: 'Menyimpan salinan konfigurasi lengkap ke menu Files sebelum ada yang dihapus.' }),
+    f('aktif', 'Putuskan semua koneksi PPP aktif', 'check', true),
+    f('secret', 'Hapus semua PPP secret (akun)', 'check', true),
+    f('profil', 'Hapus profil PPP (kecuali bawaan)', 'check', false, { help: 'Profil default dan default-encryption tidak bisa dihapus, jadi hanya profil buatan sendiri yang ikut terhapus.' }),
+    f('server', 'Hapus semua server PPPoE', 'check', false)
+  ],
+  function (v) {
+    var L = [];
+    if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-ppp'); }
+    if (v.aktif) { L.push('/ppp active remove [find]'); }
+    if (v.secret) { L.push('/ppp secret remove [find]'); }
+    if (v.profil) { L.push('/ppp profile remove [find where name!="default" and name!="default-encryption"]'); }
+    if (v.server) { L.push('/interface pppoe-server server remove [find]'); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang dihapus. Centang minimal satu kelompok.'); }
+    return H('Remove All PPP') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'PPP secret adalah daftar akun pelanggan (nama pengguna dan password). Menghapusnya berarti tidak ada pelanggan yang bisa login lagi, walau server PPPoE masih menyala.',
+      'Koneksi aktif diputuskan dulu sebelum akun dihapus, supaya pelanggan yang sedang online langsung terputus dan tidak menggantung.',
+      'Profil PPP mengatur alamat, DNS, dan batas kecepatan pelanggan. Profil bawaan tidak bisa dihapus, jadi hanya profil buatanmu yang ikut hilang.',
+      'Server PPPoE adalah layanan yang menerima sambungan pelanggan. Menghapusnya mematikan layanan, sehingga tidak ada pelanggan baru yang bisa tersambung.',
+      'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.'
+    ];
+  }));
+
+TOOLS.push(T('walled-garden', 'hotspot', 'Walled Garden', 'Walled Garden',
+  'Izinkan situs atau alamat IP tertentu dibuka tanpa login hotspot. Cocok untuk halaman pembayaran, toko aplikasi, atau situs yang wajib bisa dibuka sebelum pengguna sempat login.',
+  [
+    f('tipe', 'Jenis entri', 'select', 'domain', { opts: [{ v: 'domain', l: 'Domain (dst-host)' }, { v: 'ip', l: 'Alamat IP (dst-address)' }] }),
+    f('target', 'Domain atau alamat IP', 'text', 'play.google.com', { mono: 1, help: 'Untuk domain, tanda * bisa dipakai untuk semua subdomain, contoh *.whatsapp.net.' }),
+    f('server', 'Nama server hotspot (opsional)', 'text', '', { opt: 1, help: 'Kosongkan bila hanya ada satu server hotspot.' }),
+    f('komen', 'Komentar', 'text', '', { opt: 1, ph: 'Toko aplikasi' })
+  ],
+  function (v) {
+    var s;
+    if (v.tipe === 'ip') { s = '/ip hotspot walled-garden ip add dst-address=' + q(v.target); }
+    else { s = '/ip hotspot walled-garden add dst-host=' + q(v.target); }
+    if (v.server) { s += ' server=' + q(v.server); }
+    if (v.komen) { s += ' comment=' + q(v.komen); }
+    return H('Walled Garden') + s + '\n';
+  },
+  function () {
+    return [
+      'Walled garden adalah daftar pengecualian hotspot: alamat di daftar ini bisa dibuka tanpa login, sementara situs lain tetap terkunci di balik halaman login.',
+      'Jenis domain (dst-host) dipakai untuk nama situs, sedangkan jenis alamat IP (dst-address) dipakai untuk server yang alamatnya tetap, misalnya server pembayaran.',
+      'Tanda bintang pada domain berarti semua subdomain ikut diizinkan, contoh *.whatsapp.net mengizinkan semua alamat di bawah whatsapp.net.',
+      'Batasi walled garden hanya untuk situs yang benar-benar perlu, seperti toko aplikasi dan halaman pembayaran. Daftar yang terlalu longgar sama saja dengan membuka hotspot tanpa login.'
     ];
   }));
 
