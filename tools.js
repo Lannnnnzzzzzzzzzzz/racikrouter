@@ -954,6 +954,52 @@ TOOLS.push(T('traceroute-tool', 'dasar', 'Traceroute Tool', 'Traceroute Tool',
     ];
   }));
 
+
+TOOLS.push(T('konfigurasi-dasar', 'dasar', 'Konfigurasi Dasar (Satu Script Awal)', 'Basic Configuration Script Generator',
+  'Satu script awal untuk router baru: identitas, alamat LAN, DHCP server, DNS, NTP, rute default, NAT, dan pengaman dasar.',
+  [
+    f('nama', 'Nama identitas router', 'text', 'Router-Utama', { mono: 1 }),
+    f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
+    f('cidr', 'Alamat IP LAN beserta prefix', 'cidr', '192.168.88.1/24', { v: 'cidr' }),
+    f('wan', 'Interface WAN', 'text', 'ether1', { mono: 1 }),
+    f('gw', 'Gateway WAN', 'ip', '192.168.1.1', { v: 'ip' }),
+    f('from', 'Awal pool DHCP', 'ip', '192.168.88.10', { v: 'ip' }),
+    f('to', 'Akhir pool DHCP', 'ip', '192.168.88.254', { v: 'ip' }),
+    f('dhcp', 'Nyalakan DHCP server untuk LAN', 'check', true),
+    f('dns', 'Server DNS', 'text', '8.8.8.8,1.1.1.1', { mono: 1, help: 'Pisahkan dengan koma bila lebih dari satu.' }),
+    f('nat', 'Nyalakan NAT masquerade keluar WAN', 'check', true),
+    f('pass', 'Password admin baru (opsional)', 'text', '', { mono: 1, help: 'Bila diisi, password pengguna admin diubah ke nilai ini. Bila kosong, baris password dilewati.' }),
+    f('layanan', 'Matikan layanan lama (Telnet, FTP, WWW, API)', 'check', false)
+  ],
+  function (v) {
+    var L = [];
+    L.push('/system identity set name=' + v.nama);
+    L.push('/ip address add address=' + v.cidr + ' interface=' + v.lan + ' comment="Gateway LAN"');
+    if (v.dhcp) {
+      L.push('# DHCP server untuk LAN');
+      L.push('/ip pool add name=pool-lan ranges=' + v.from + '-' + v.to);
+      L.push('/ip dhcp-server network add address=' + netPart(v.cidr) + '/' + prefixPart(v.cidr) + ' gateway=' + ipPart(v.cidr) + ' dns-server=' + v.dns);
+      L.push('/ip dhcp-server add name=dhcp-lan interface=' + v.lan + ' address-pool=pool-lan disabled=no');
+    }
+    L.push('/ip dns set servers=' + v.dns + ' allow-remote-requests=yes');
+    L.push('/system ntp client set enabled=yes');
+    L.push('/system ntp client servers add address=id.pool.ntp.org');
+    L.push('/ip route add gateway=' + v.gw + ' comment="Rute default lewat ' + v.wan + '"');
+    if (v.nat) { L.push('/ip firewall nat add chain=srcnat out-interface=' + v.wan + ' action=masquerade comment="NAT keluar ' + v.wan + '"'); }
+    if (v.pass) { L.push('/user set admin password=' + q(v.pass)); }
+    if (v.layanan) { L.push('/ip service disable telnet,ftp,www,api,api-ssl'); }
+    return H('Konfigurasi Dasar (Satu Script Awal)') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Script ini adalah titik awal router baru: satu alamat LAN, DHCP server, DNS, jam NTP, rute default, dan NAT keluar WAN dalam satu kali tempel.',
+      'Gateway pada jaringan DHCP diambil dari alamat IP LAN yang kamu isi, jadi perangkat LAN otomatis memakai router sebagai gateway.',
+      'NTP memakai id.pool.ntp.org agar jam router selalu akurat. Scheduler dan log mengikuti jam ini.',
+      'Bila password admin diisi, catat dulu password barunya di tempat aman sebelum menjalankan script, karena akses admin lama langsung berubah.',
+      'Setelah script jalan, periksa dengan perintah /ip address print dan /ip dhcp-server print sebelum menyambungkan perangkat lain.'
+    ];
+  }));
+
 /* ================= Kategori: Routing ================= */
 
 TOOLS.push(T('static-route', 'routing', 'Rute Statis', 'Static Route',
@@ -1409,6 +1455,237 @@ TOOLS.push(T('remove-all-routing', 'routing', 'Remove All Routing', 'Remove All 
       'Routing rule dan tabel kustom dipakai policy routing dan load balancing. Menghapusnya membuat trafik yang tadinya dipisah ke jalur khusus kembali mengikuti tabel utama.',
       'Setelah rute dihapus, uji koneksi ke internet dan ke jaringan lain sebelum meninggalkan router. Bila ada yang putus, pulihkan dari backup .rsc yang dibuat di awal.',
       'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.'
+    ];
+  }));
+
+
+TOOLS.push(T('starlink-lb-pcc', 'routing', 'Starlink Load Balancing PCC', 'Starlink Load Balancing PCC',
+  'Sebar koneksi antara Starlink dan satu WAN kedua memakai PCC, agar tiap koneksi konsisten lewat satu jalur.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether5', { mono: 1 }),
+    f('star', 'Interface Starlink', 'text', 'ether1', { mono: 1 }),
+    f('gwstar', 'Gateway Starlink', 'ip', '192.168.100.1', { v: 'ip', help: 'Gateway Starlink bila memakai router Starlink. Bila Starlink mode bypass dan DHCP client di router, isi gateway yang didapat DHCP.' }),
+    f('w2', 'Interface WAN kedua', 'text', 'ether2', { mono: 1 }),
+    f('gw2', 'Gateway WAN kedua', 'ip', '192.168.2.1', { v: 'ip' }),
+    f('klas', 'Klasifikasi koneksi', 'select', 'both-addresses-and-ports', { opts: ['both-addresses-and-ports', 'both-addresses', 'src-address', 'src-address-and-port', 'dst-address-and-port'] })
+  ],
+  function (v) {
+    var wans = [
+      { iface: v.star, gw: v.gwstar, nama: 'starlink' },
+      { iface: v.w2, gw: v.gw2, nama: 'wan2' }
+    ];
+    var L = [];
+    L.push('# Tabel routing khusus untuk tiap WAN');
+    wans.forEach(function (w, i) { L.push('/routing table add name=to-' + w.nama + ' fib'); });
+    L.push('# Tandai koneksi yang masuk dari tiap WAN agar jawabannya pulang lewat jalur yang sama');
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=input in-interface=' + w.iface + ' action=mark-connection new-connection-mark=' + w.nama + '-conn passthrough=yes');
+    });
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=output connection-mark=' + w.nama + '-conn action=mark-routing new-routing-mark=to-' + w.nama + ' passthrough=no');
+    });
+    L.push('# Bagi koneksi baru dari LAN dengan PCC');
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' dst-address-type=!local per-connection-classifier=' + v.klas + ':2/' + i + ' action=mark-connection new-connection-mark=' + w.nama + '-conn passthrough=yes');
+    });
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' connection-mark=' + w.nama + '-conn action=mark-routing new-routing-mark=to-' + w.nama + ' passthrough=no');
+    });
+    L.push('# Rute untuk tiap tabel dan rute default utama');
+    wans.forEach(function (w, i) {
+      L.push('/ip route add gateway=' + w.gw + ' routing-table=to-' + w.nama + ' check-gateway=ping comment="Rute tabel ' + w.nama + '"');
+      L.push('/ip route add gateway=' + w.gw + ' distance=' + (i + 1) + ' check-gateway=ping comment="Default utama ' + w.nama + '"');
+    });
+    L.push('# NAT keluar untuk semua WAN');
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall nat add chain=srcnat out-interface=' + w.iface + ' action=masquerade comment="NAT ' + w.nama + '"');
+    });
+    L.push('# Catatan: Starlink memakai CGNAT, jadi port forwarding dari internet tidak bisa masuk. Load balancing tetap jalan untuk trafik keluar.');
+    return H('Starlink Load Balancing PCC') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'PCC menghash alamat dan port koneksi, lalu hasilnya dibagi rata ke Starlink dan WAN kedua. Satu koneksi selalu lewat satu jalur, jadi sesi login tidak putus.',
+      'Tanda koneksi dari arah input memastikan jawaban dari internet pulang lewat WAN tempat koneksi itu lahir.',
+      'Setiap WAN punya tabel routing sendiri (to-starlink dan to-wan2) sesuai cara RouterOS v7 memisahkan rute bertanda.',
+      'Starlink memakai CGNAT sehingga alamat publiknya dipakai bersama. Itu sebabnya port forwarding dari internet tidak bisa masuk lewat Starlink, dan itu normal, bukan kesalahan script.'
+    ];
+  }));
+
+TOOLS.push(T('lb-nth', 'routing', 'Load Balancing NTH', 'Load Balancing NTH',
+  'Sebar koneksi ke dua WAN dengan penghitung NTH: koneksi baru dibagi bergiliran, tiap koneksi tetap lewat satu jalur.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether5', { mono: 1 }),
+    f('w1', 'Interface WAN 1', 'text', 'ether1', { mono: 1 }),
+    f('g1', 'Gateway WAN 1', 'ip', '192.168.1.1', { v: 'ip' }),
+    f('w2', 'Interface WAN 2', 'text', 'ether2', { mono: 1 }),
+    f('g2', 'Gateway WAN 2', 'ip', '192.168.2.1', { v: 'ip' })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/routing table add name=to-wan1 fib');
+    L.push('/routing table add name=to-wan2 fib');
+    L.push('# Tandai koneksi masuk dari tiap WAN agar jawaban pulang lewat jalur asal');
+    L.push('/ip firewall mangle add chain=input in-interface=' + v.w1 + ' action=mark-connection new-connection-mark=wan1-conn passthrough=yes');
+    L.push('/ip firewall mangle add chain=input in-interface=' + v.w2 + ' action=mark-connection new-connection-mark=wan2-conn passthrough=yes');
+    L.push('/ip firewall mangle add chain=output connection-mark=wan1-conn action=mark-routing new-routing-mark=to-wan1 passthrough=no');
+    L.push('/ip firewall mangle add chain=output connection-mark=wan2-conn action=mark-routing new-routing-mark=to-wan2 passthrough=no');
+    L.push('# Bagi koneksi baru dari LAN dengan NTH: hitungan ke-1 ke WAN 1, hitungan ke-2 ke WAN 2, lalu berulang');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' dst-address-type=!local connection-mark=no-mark nth=2,1 action=mark-connection new-connection-mark=wan1-conn passthrough=yes');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' dst-address-type=!local connection-mark=no-mark nth=2,2 action=mark-connection new-connection-mark=wan2-conn passthrough=yes');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' connection-mark=wan1-conn action=mark-routing new-routing-mark=to-wan1 passthrough=no');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' connection-mark=wan2-conn action=mark-routing new-routing-mark=to-wan2 passthrough=no');
+    L.push('# Rute untuk tiap tabel dan rute default cadangan');
+    L.push('/ip route add gateway=' + v.g1 + ' routing-table=to-wan1 check-gateway=ping comment="Rute tabel WAN1"');
+    L.push('/ip route add gateway=' + v.g2 + ' routing-table=to-wan2 check-gateway=ping comment="Rute tabel WAN2"');
+    L.push('/ip route add gateway=' + v.g1 + ',' + v.g2 + ' check-gateway=ping distance=1 comment="Default cadangan ECMP"');
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.w1 + ' action=masquerade comment="NAT WAN1"');
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.w2 + ' action=masquerade comment="NAT WAN2"');
+    return H('Load Balancing NTH') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'NTH adalah penghitung: paket pertama dari koneksi baru dihitung ke WAN 1, paket kedua ke WAN 2, lalu berulang. Karena aturan ini hanya menyentuh koneksi yang belum bertanda, satu koneksi tetap lewat satu jalur sampai selesai.',
+      'NTH lebih ringan dan lebih mudah dibaca daripada PCC, tetapi pembagiannya mengikuti urutan hitungan, bukan karakteristik koneksi, jadi untuk beban yang tidak merata PCC biasanya membagi lebih adil.',
+      'Aturan mangle di atas menjaga koneksi yang dimulai dari internet, misalnya port forwarding, agar jawabannya tidak pulang lewat jalur yang salah.',
+      'Rute default ECMP di akhir hanya pengaman untuk trafik yang tidak bertanda. Trafik bertanda tetap memakai tabel routingnya sendiri.'
+    ];
+  }));
+
+TOOLS.push(T('game-raw-routing', 'routing', 'Rute Game via Raw Filter', 'Games Static Routing Using Filter Raw',
+  'Arahkan trafik ke server game lewat satu gateway khusus. Penandaan dilakukan di tabel raw, sebelum connection tracking.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
+    f('ips', 'Alamat server game (IP atau CIDR)', 'textarea', '103.86.211.0/24\n45.112.90.0/24', { mono: 1, help: 'Satu alamat IP atau CIDR per baris. Ganti dengan alamat server game yang kamu pakai, lihat dokumentasi game itu.' }),
+    f('gw', 'Gateway WAN khusus game', 'ip', '192.168.2.1', { v: 'ip' }),
+    f('wan', 'Interface WAN khusus game', 'text', 'ether1', { mono: 1 })
+  ],
+  function (v) {
+    var ips = String(v.ips).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var L = [];
+    ips.forEach(function (a) { L.push('/ip firewall address-list add list=server-game address=' + a + ' comment="Server game"'); });
+    L.push('# Tabel raw memproses paket sebelum connection tracking, jadi penandaan terjadi paling awal');
+    L.push('/ip firewall raw add chain=prerouting in-interface=' + v.lan + ' dst-address-list=server-game action=mark-connection new-connection-mark=game-conn passthrough=yes comment="Tandai koneksi game di raw"');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' connection-mark=game-conn action=mark-routing new-routing-mark=ke-game passthrough=no comment="Arahkan game ke gateway khusus"');
+    L.push('/routing table add name=ke-game fib');
+    L.push('/ip route add gateway=' + v.gw + ' routing-table=ke-game check-gateway=ping comment="Rute game lewat WAN khusus"');
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.wan + ' action=masquerade comment="NAT WAN game"');
+    return H('Rute Game via Raw Filter') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Tabel raw adalah gerbang pertama firewall: paket ditandai di sini sebelum connection tracking mencatatnya, jadi beban CPU untuk koneksi game berkurang.',
+      'Daftar server game harus berisi alamat IP asli server game itu. Alamat ini berbeda tiap game dan tiap region, jadi periksa dokumentasi atau pantau koneksi game dengan Torch bila ragu.',
+      'Trafik selain ke server game tidak tersentuh aturan ini dan tetap memakai rute default biasa.',
+      'NAT di akhir wajib ada karena gateway khusus game adalah jalur keluar yang berbeda dari WAN utama.'
+    ];
+  }));
+
+TOOLS.push(T('game-mangle-port-routing', 'routing', 'Rute Game via Mangle Port', 'Games Static Routing Using Mangle Port',
+  'Arahkan trafik game berdasarkan nomor port tujuannya lewat satu gateway khusus, memakai mangle prerouting.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
+    f('ports', 'Daftar port game', 'textarea', '3074\n27014-27050\n5000-5500', { mono: 1, help: 'Satu port atau rentang per baris. Port tiap game berbeda, sesuaikan dengan game yang dimainkan di jaringanmu.' }),
+    f('proto', 'Protokol', 'select', 'udp', { opts: ['udp', 'tcp'] }),
+    f('gw', 'Gateway WAN khusus game', 'ip', '192.168.2.1', { v: 'ip' }),
+    f('wan', 'Interface WAN khusus game', 'text', 'ether1', { mono: 1 })
+  ],
+  function (v) {
+    var ports = String(v.ports).split('\n').map(function (s) { return s.trim(); }).filter(Boolean).join(',');
+    var L = [];
+    L.push('# Tandai koneksi game berdasarkan port tujuannya');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' protocol=' + v.proto + ' dst-port=' + ports + ' action=mark-connection new-connection-mark=game-conn passthrough=yes comment="Tandai koneksi game"');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' connection-mark=game-conn action=mark-routing new-routing-mark=ke-game passthrough=no comment="Arahkan game ke gateway khusus"');
+    L.push('/routing table add name=ke-game fib');
+    L.push('/ip route add gateway=' + v.gw + ' routing-table=ke-game check-gateway=ping comment="Rute game lewat WAN khusus"');
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.wan + ' action=masquerade comment="NAT WAN game"');
+    return H('Rute Game via Mangle Port') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Mangle menandai koneksi yang port tujuannya cocok dengan daftar game, lalu memberi tanda routing ke tabel khusus game.',
+      'Kebanyakan game memakai UDP, tetapi sebagian memakai TCP untuk login dan unduhan. Bila game tertentu tetap lewat jalur utama, periksa protokol aslinya lalu ganti pilihan protokol di atas.',
+      'Daftar port adalah perkiraan awal. Bila game tertentu tetap tersendat, periksa port aslinya di dokumentasi game itu lalu tambahkan.',
+      'Trafik selain port game tidak tersentuh dan tetap memakai rute default biasa.'
+    ];
+  }));
+
+TOOLS.push(T('website-static-routing', 'routing', 'Rute Statis Website', 'Website Static Routing',
+  'Lewatkan situs tertentu lewat satu gateway khusus, situs lain tetap di jalur utama.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
+    f('domains', 'Daftar domain situs', 'textarea', 'cdn.game-contoh.com\npatch.game-contoh.com', { mono: 1, help: 'Satu domain per baris. Domain berakhiran .contoh adalah contoh penulisan, ganti dengan domain aslimu.' }),
+    f('gw', 'Gateway jalur khusus', 'ip', '192.168.2.1', { v: 'ip' }),
+    f('wan', 'Interface WAN jalur khusus', 'text', 'ether1', { mono: 1 })
+  ],
+  function (v) {
+    var domains = String(v.domains).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var L = [];
+    domains.forEach(function (d) { L.push('/ip firewall address-list add list=situs-rute address=' + d + ' comment="Situs jalur khusus"'); });
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' dst-address-list=situs-rute action=mark-routing new-routing-mark=ke-situs passthrough=no comment="Tandai situs jalur khusus"');
+    L.push('/routing table add name=ke-situs fib');
+    L.push('/ip route add gateway=' + v.gw + ' routing-table=ke-situs check-gateway=ping comment="Rute situs lewat jalur khusus"');
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.wan + ' action=masquerade comment="NAT jalur khusus"');
+    return H('Rute Statis Website') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'RouterOS bisa mengenali domain dalam address list dan menyelesaikan alamat IP nya secara berkala dari DNS.',
+      'Paket dari LAN yang tujuannya masuk daftar situs ditandai, lalu diteruskan ke tabel routing khusus yang keluar lewat gateway pilihanmu.',
+      'Trafik selain situs terpilih tidak tersentuh aturan ini dan tetap memakai rute default biasa.',
+      'Daftar domain berubah dari waktu ke waktu. Bila ada layanan yang lolos, tambahkan domain barunya ke address list yang sama.'
+    ];
+  }));
+
+TOOLS.push(T('client-ip-static-routing', 'routing', 'Rute Statis IP Klien Lokal', 'Local Client IP Static Routing',
+  'Arahkan klien lokal tertentu berdasarkan alamat IP nya lewat satu gateway khusus, klien lain tetap di jalur utama.',
+  [
+    f('clients', 'Alamat IP klien', 'textarea', '192.168.88.20\n192.168.88.21', { mono: 1, help: 'Satu alamat IP per baris. Klien ini bisa berupa PC, konsol game, atau perangkat lain yang mau dilewatkan jalur khusus.' }),
+    f('gw', 'Gateway jalur khusus', 'ip', '192.168.2.1', { v: 'ip' }),
+    f('wan', 'Interface WAN jalur khusus', 'text', 'ether1', { mono: 1 })
+  ],
+  function (v) {
+    var clients = String(v.clients).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var L = [];
+    clients.forEach(function (a) { L.push('/ip firewall address-list add list=klien-khusus address=' + a + ' comment="Klien jalur khusus"'); });
+    L.push('/ip firewall mangle add chain=prerouting src-address-list=klien-khusus action=mark-routing new-routing-mark=ke-klien passthrough=no comment="Tandai klien jalur khusus"');
+    L.push('/routing table add name=ke-klien fib');
+    L.push('/ip route add gateway=' + v.gw + ' routing-table=ke-klien check-gateway=ping comment="Rute klien lewat jalur khusus"');
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.wan + ' action=masquerade comment="NAT jalur khusus"');
+    return H('Rute Statis IP Klien Lokal') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Aturan ini membaca alamat sumber paket, jadi hanya klien yang alamatnya terdaftar yang dipindah jalurnya.',
+      'Pastikan alamat klien tetap, misalnya lewat DHCP lease statis, karena bila alamatnya berubah oleh DHCP, aturan ini tidak lagi mengenali klien itu.',
+      'Klien lain yang tidak terdaftar tidak tersentuh dan tetap memakai rute default biasa.',
+      'Satu gateway khusus bisa dipakai bersama oleh beberapa tool rute statis, asal nama tabel routingnya berbeda.'
+    ];
+  }));
+
+TOOLS.push(T('port-static-routing', 'routing', 'Rute Statis Port TCP/UDP', 'Port TCP/UDP Static Routing',
+  'Lewatkan trafik dengan port tujuan tertentu lewat satu gateway khusus, port lain tetap di jalur utama.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
+    f('proto', 'Protokol', 'select', 'tcp', { opts: ['tcp', 'udp'] }),
+    f('ports', 'Daftar port tujuan', 'text', '80,443', { mono: 1, help: 'Pisahkan beberapa port dengan koma, contoh 80,443. Rentang ditulis 8000-8100.' }),
+    f('gw', 'Gateway jalur khusus', 'ip', '192.168.2.1', { v: 'ip' }),
+    f('wan', 'Interface WAN jalur khusus', 'text', 'ether1', { mono: 1 })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' protocol=' + v.proto + ' dst-port=' + v.ports + ' action=mark-routing new-routing-mark=ke-port passthrough=no comment="Tandai port jalur khusus"');
+    L.push('/routing table add name=ke-port fib');
+    L.push('/ip route add gateway=' + v.gw + ' routing-table=ke-port check-gateway=ping comment="Rute port lewat jalur khusus"');
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.wan + ' action=masquerade comment="NAT jalur khusus"');
+    return H('Rute Statis Port TCP/UDP') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Aturan ini membaca port tujuan paket, jadi cocok untuk layanan yang portnya sudah pasti, misalnya web di port 80 dan 443.',
+      'Perhatikan protokolnya: web dan unduhan umumnya TCP, sedangkan game dan panggilan suara umumnya UDP. Pilihan yang salah membuat aturan tidak pernah cocok.',
+      'Trafik dengan port di luar daftar tidak tersentuh dan tetap memakai rute default biasa.',
+      'Bila satu layanan memakai banyak port, daftarkan semuanya dipisah koma, atau buat dua tool terpisah untuk TCP dan UDP.'
     ];
   }));
 
@@ -2065,6 +2342,231 @@ TOOLS.push(T('remove-all-firewall', 'firewall', 'Remove All Firewall', 'Remove A
       'Mangle dipakai untuk menandai paket (pisah trafik, prioritas, dan load balancing). Menghapusnya membuat queue dan policy routing yang bergantung pada tanda itu berhenti bekerja.',
       'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.',
       'Jalankan script ini hanya dari koneksi yang aman (kabel atau MAC Winbox), karena setelah filter hilang, akses ke router menjadi terbuka dari semua arah.'
+    ];
+  }));
+
+
+TOOLS.push(T('fasttrack-generator', 'firewall', 'Generator Script Fasttrack', 'Fasttrack Script Generator',
+  'Racik script FastTrack lengkap: tandai koneksi VPN agar tidak difasttrack, lewati koneksi bertanda bila perlu, lalu terima koneksi berjalan dan buang paket invalid.',
+  [
+    f('vpniface', 'Nama interface VPN', 'text', 'wg0', { mono: 1, help: 'Nama interface VPN. Hanya dipakai bila kecualikan VPN dicentang.' }),
+    f('vpn', 'Kecualikan trafik VPN dari fasttrack', 'check', true, { help: 'Trafik VPN dilewati fasttrack karena enkripsi dan routing bertanda butuh pemrosesan penuh.' }),
+    f('tandai', 'Jangan fasttrack koneksi yang sudah ditandai mangle', 'check', false, { help: 'Bila dicentang, koneksi yang sudah diberi tanda oleh mangle, misalnya untuk queue atau routing, tetap diproses penuh dan tidak difasttrack.' }),
+    f('invalid', 'Buang juga paket invalid sesudahnya', 'check', true)
+  ],
+  function (v) {
+    var L = [];
+    L.push('# Fasttrack harus berada di urutan paling atas chain forward. Bila ada aturan lain di atasnya, pindahkan aturan ini ke atas lewat Winbox.');
+    if (v.vpn) {
+      L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.vpniface + ' action=mark-connection new-connection-mark=vpn-conn passthrough=yes comment="Tandai koneksi VPN agar tidak difasttrack"');
+    }
+    var tandai = v.tandai ? ' connection-mark=no-mark' : (v.vpn ? ' connection-mark=!vpn-conn' : '');
+    L.push('/ip firewall filter add chain=forward connection-state=established,related' + tandai + ' action=fasttrack-connection comment="Fasttrack koneksi berjalan"');
+    L.push('/ip firewall filter add chain=forward connection-state=established,related action=accept comment="Terima koneksi berjalan"');
+    if (v.invalid) { L.push('/ip firewall filter add chain=forward connection-state=invalid action=drop comment="Buang paket invalid"'); }
+    return H('Generator Script Fasttrack') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Aturan FastTrack hanya menyentuh koneksi yang sudah berjalan (established) dan yang berkaitan dengannya. Koneksi baru tetap lewat firewall seperti biasa, jadi aturan blokir untuk koneksi baru tetap berlaku.',
+      'Paket yang sudah di-FastTrack melewatkan firewall, queue, dan mangle. Karena itu koneksi VPN dan koneksi bertanda bisa dikecualikan, supaya enkripsi dan pembagian bandwidth tetap bekerja.',
+      'Aturan ini harus berada di urutan paling atas pada chain forward. Bila ada aturan lain di atasnya, paket keburu diproses aturan itu sebelum sampai ke FastTrack.',
+      'Saat mendiagnosis gangguan, matikan sementara aturan FastTrack, karena paket yang melompatinya tidak tercatat di hitungan aturan firewall.'
+    ];
+  }));
+
+TOOLS.push(T('remote-access-publik', 'firewall', 'Akses Jarak Jauh dari IP Publik Statis', 'Remote Access ISP "Public IP Static"',
+  'Kunci Winbox dan SSH supaya hanya bisa dibuka dari satu alamat IP publik statismu. Upaya masuk dari alamat lain langsung dibuang.',
+  [
+    f('ip', 'Alamat IP publik statis pengelola', 'ip', '203.0.113.50', { v: 'ip', help: 'Alamat IP publik di lokasi pengelola. Hanya alamat ini yang boleh masuk. Nilai 203.0.113.50 adalah contoh dari blok dokumentasi, ganti dengan IP aslimu.' }),
+    f('winbox', 'Izinkan Winbox (port 8291)', 'check', true),
+    f('ssh', 'Izinkan SSH (port 22)', 'check', false),
+    f('wan', 'Interface WAN', 'text', 'ether1', { mono: 1 })
+  ],
+  function (v) {
+    var L = [];
+    L.push('# Hanya IP pengelola yang boleh menyentuh layanan jarak jauh router');
+    if (v.winbox) {
+      L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp dst-port=8291 src-address=' + v.ip + ' action=accept comment="Winbox hanya dari IP pengelola"');
+      L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp dst-port=8291 src-address=!' + v.ip + ' action=drop comment="Tolak Winbox dari IP lain"');
+    }
+    if (v.ssh) {
+      L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp dst-port=22 src-address=' + v.ip + ' action=accept comment="SSH hanya dari IP pengelola"');
+      L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp dst-port=22 src-address=!' + v.ip + ' action=drop comment="Tolak SSH dari IP lain"');
+    }
+    if (!v.winbox && !v.ssh) { L.push('# Tidak ada layanan yang dipilih, tidak ada aturan yang dibuat. Centang minimal satu layanan.'); }
+    return H('Akses Jarak Jauh dari IP Publik Statis') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Setiap layanan yang dipilih mendapat dua aturan: terima dari IP pengelola, lalu buang dari semua alamat lain. Aturan terima harus berada di atas aturan buang.',
+      'Tanda seru pada src-address=!IP berarti "semua alamat kecuali IP ini". Itulah yang membuat kunci ini bekerja.',
+      'Tool ini hanya aman untuk IP publik yang benar benar statis. Bila IP lokasimu berubah karena DHCP ISP, kamu terkunci dari routermu sendiri sampai datang langsung ke lokasinya.',
+      'Uji dulu dari alamat IP yang diizinkan sebelum menutup sesi Winbox yang sedang berjalan, supaya ada jalan kembali bila ada yang keliru.'
+    ];
+  }));
+
+TOOLS.push(T('sembunyi-isp', 'firewall', 'Sembunyikan Routerboard dari ISP', 'MikroTik Ninja: Hide Routerboard from ISP',
+  'Sembunyikan router dari sisi ISP: matikan neighbor discovery ke WAN, matikan MAC server dan MAC Winbox, matikan bandwidth test, dan bila mau, samarkan nama identitas.',
+  [
+    f('wan', 'Interface WAN (arah ISP)', 'text', 'ether1', { mono: 1 }),
+    f('lan', 'Interface LAN (tetap boleh melihat router)', 'text', 'ether2', { mono: 1 }),
+    f('discovery', 'Matikan neighbor discovery ke arah ISP', 'check', true, { help: 'Router tidak lagi mengumumkan dirinya lewat discovery di semua interface kecuali LAN.' }),
+    f('macserver', 'Matikan MAC server dan MAC Winbox', 'check', true, { help: 'Setelah ini Winbox hanya bisa lewat alamat IP, bukan lewat alamat MAC.' }),
+    f('btest', 'Matikan server bandwidth test', 'check', true),
+    f('identity', 'Samarkan nama identitas router', 'check', false),
+    f('nama', 'Nama identitas baru', 'text', 'Router', { help: 'Hanya dipakai bila samarkan identitas dicentang.' })
+  ],
+  function (v) {
+    var L = [];
+    if (v.discovery) {
+      L.push('/ip neighbor discovery set [find] discover=no');
+      L.push('/ip neighbor discovery set [find interface=' + v.lan + '] discover=yes');
+    }
+    if (v.macserver) {
+      L.push('/tool mac-server set allowed-interface-list=none');
+      L.push('/tool mac-server mac-winbox set allowed-interface-list=none');
+      L.push('/tool mac-server ping set enabled=no');
+    }
+    if (v.btest) { L.push('/tool bandwidth-server set enabled=no'); }
+    if (v.identity) { L.push('/system identity set name=' + v.nama); }
+    if (!L.length) { L.push('# Tidak ada yang dipilih, tidak ada yang disembunyikan. Centang minimal satu pilihan.'); }
+    return H('Sembunyikan Routerboard dari ISP') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Neighbor discovery dimatikan di semua interface lalu dinyalakan lagi hanya untuk LAN, jadi perangkat di sisi ISP tidak lagi melihat router, tetapi perangkat LAN tetap bisa menemukannya.',
+      'MAC server yang dimatikan berarti Winbox dan Telnet lewat alamat MAC berhenti total. Itu disengaja: akses MAC adalah jalur yang tidak butuh alamat IP dan sering dipakai pemindai jaringan.',
+      'Server bandwidth test yang menyala bisa dipakai orang luar untuk membebani CPU router. Mematikannya menghemat CPU dan menutup satu pintu yang terlihat dari luar.',
+      'Menyamarkan identitas hanya mengubah nama yang tampil. Ini bukan keamanan sungguhan, hanya membuat router tidak langsung dikenali dari namanya.'
+    ];
+  }));
+
+TOOLS.push(T('proteksi-lanjut', 'firewall', 'Proteksi Lanjutan RouterOS', 'Advanced MikroTik Router-OS Protection',
+  'Paket proteksi tingkat lanjut: blokir alamat bogon dari WAN, proteksi SYN flood, tahan amplifikasi DNS, batasi koneksi baru, dan rapikan layanan.',
+  [
+    f('wan', 'Interface WAN', 'text', 'ether1', { mono: 1 }),
+    f('bogon', 'Blokir alamat bogon dari WAN', 'check', true, { help: 'Alamat bogon adalah alamat yang tidak seharusnya muncul dari internet, misalnya alamat privat dan alamat dokumentasi.' }),
+    f('syn', 'Nyalakan proteksi SYN flood (TCP syncookies)', 'check', true),
+    f('dnsamp', 'Blokir amplifikasi DNS dari WAN (UDP 53)', 'check', true, { help: 'Mencegah router dipakai sebagai penguat serangan DNS ke korban lain.' }),
+    f('limit', 'Batasi koneksi baru per IP', 'check', true),
+    f('batas', 'Batas koneksi baru per IP', 'number', 100, { v: 'num', min: 10, max: 1000 }),
+    f('gantiport', 'Pindah port Winbox ke nomor lain', 'check', false, { help: 'Bila dicentang, port layanan Winbox diubah. Ingat port barunya, dan sesuaikan aturan firewall yang menyebut port 8291.' }),
+    f('portbaru', 'Port Winbox baru', 'number', 8291, { v: 'port' }),
+    f('layanan', 'Matikan layanan lama (Telnet, FTP, WWW, API)', 'check', true)
+  ],
+  function (v) {
+    var L = [];
+    L.push('# Terima koneksi yang sudah berjalan dan yang berkaitan');
+    L.push('/ip firewall filter add chain=input connection-state=established,related action=accept comment="Terima koneksi berjalan"');
+    L.push('/ip firewall filter add chain=forward connection-state=established,related action=accept comment="Terima koneksi berjalan"');
+    L.push('/ip firewall filter add chain=input connection-state=invalid action=drop comment="Buang paket invalid"');
+    L.push('/ip firewall filter add chain=forward connection-state=invalid action=drop comment="Buang paket invalid"');
+    if (v.bogon) {
+      L.push('# Daftar alamat bogon: alamat yang tidak seharusnya muncul dari internet');
+      ['0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '169.254.0.0/16', '172.16.0.0/12', '192.0.2.0/24', '192.168.0.0/16', '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/4', '240.0.0.0/4'].forEach(function (a) { L.push('/ip firewall address-list add list=bogon address=' + a + ' comment="Alamat bogon"'); });
+      L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' src-address-list=bogon action=drop comment="Buang trafik dari alamat bogon"');
+    }
+    if (v.syn) { L.push('/ip settings set tcp-syncookies=yes'); }
+    if (v.dnsamp) { L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=udp dst-port=53 action=drop comment="Tolak DNS dari WAN agar router tidak jadi penguat serangan"'); }
+    if (v.limit) { L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp connection-limit=' + v.batas + ',32 action=drop comment="Batasi koneksi baru per IP"'); }
+    if (v.gantiport) { L.push('/ip service set winbox port=' + v.portbaru); }
+    if (v.layanan) { L.push('/ip service disable telnet,ftp,www,api,api-ssl'); }
+    L.push('# Catatan: tambahkan aturan terima dari jaringan pengelola sebelum aturan drop umum milikmu, agar kamu tidak terkunci dari routermu sendiri.');
+    return H('Proteksi Lanjutan RouterOS') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Alamat bogon adalah alamat yang secara aturan tidak boleh menjadi sumber trafik internet. Membuangnya di pintu masuk menutup banyak pola serangan palsu sekaligus.',
+      'SYN cookies membuat router tetap bisa menjawab jabat tangan TCP baru walau sedang dibanjiri permintaan SYN palsu, tanpa menyimpan antrean besar di memori.',
+      'Serangan amplifikasi DNS memakai server DNS yang terbuka untuk membanjiri korban. Menutup port 53 dari WAN mencegah routermu dipakai sebagai penguat serangan itu.',
+      'Batas koneksi baru melindungi CPU dari satu IP yang membuka koneksi berulang kali. Nilai yang terlalu kecil bisa mengganggu jaringan padat, jadi naikkan bila keluhan muncul.',
+      'Memindah port Winbox hanya mengaburkan, bukan mengamankan. Tetap kunci akses Winbox dengan aturan firewall, misalnya lewat tool Akses Jarak Jauh dari IP Publik Statis.'
+    ];
+  }));
+
+TOOLS.push(T('block-websites-generator', 'firewall', 'Generator Blokir Situs', 'Block Websites Generator',
+  'Blokir situs per kategori (judi, dewasa, media sosial, game, streaming) ditambah domain buatanmu, dengan jadwal jam blokir bila perlu.',
+  [
+    f('judi', 'Kategori judi', 'check', true),
+    f('dewasa', 'Kategori dewasa', 'check', true),
+    f('sosmed', 'Kategori media sosial', 'check', false),
+    f('game', 'Kategori game', 'check', false),
+    f('streaming', 'Kategori streaming', 'check', false),
+    f('custom', 'Domain tambahan', 'textarea', '', { mono: 1, opt: 1, help: 'Satu domain per baris. Domain berakhiran .contoh adalah contoh penulisan, ganti dengan domain aslimu.' }),
+    f('jadwal', 'Aktifkan jadwal jam blokir', 'check', false, { help: 'Bila dicentang, aturan blokir hanya berlaku pada jam dan hari yang dipilih. Jam router harus benar, atur NTP dulu.' }),
+    f('mulai', 'Jam mulai blokir', 'text', '21:00', { help: 'Format jam:menit. Hanya dipakai bila jadwal dicentang.' }),
+    f('selesai', 'Jam selesai blokir', 'text', '06:00', { help: 'Format jam:menit. Hanya dipakai bila jadwal dicentang.' }),
+    f('hari', 'Hari berlaku', 'select', 'Setiap hari', { opts: ['Setiap hari', 'Senin sampai Jumat', 'Akhir pekan'] })
+  ],
+  function (v) {
+    var kat = [];
+    if (v.judi) { kat.push({ nama: 'Judi', list: 'blokir-judi', domain: ['judol-contoh.com', 'togel-contoh.com', 'slot-contoh.com'] }); }
+    if (v.dewasa) { kat.push({ nama: 'Dewasa', list: 'blokir-dewasa', domain: ['dewasa-contoh.com', 'porno-contoh.com'] }); }
+    if (v.sosmed) { kat.push({ nama: 'Media sosial', list: 'blokir-sosmed', domain: ['facebook.com', 'instagram.com', 'x.com', 'tiktok.com'] }); }
+    if (v.game) { kat.push({ nama: 'Game', list: 'blokir-game', domain: ['roblox.com', 'steamcommunity.com', 'epicgames.com'] }); }
+    if (v.streaming) { kat.push({ nama: 'Streaming', list: 'blokir-streaming', domain: ['youtube.com', 'netflix.com', 'twitch.tv'] }); }
+    var L = [];
+    function jam(s) { var t = String(s).trim(); return t.length === 5 ? t + ':00' : t; }
+    var waktu = '';
+    if (v.jadwal) {
+      var hari = v.hari === 'Senin sampai Jumat' ? 'mon,tue,wed,thu,fri' : (v.hari === 'Akhir pekan' ? 'sat,sun' : 'sun,mon,tue,wed,thu,fri,sat');
+      waktu = ' time=' + jam(v.mulai) + '-' + jam(v.selesai) + ',' + hari;
+    }
+    kat.forEach(function (k) {
+      L.push('# Kategori ' + k.nama);
+      k.domain.forEach(function (d) { L.push('/ip firewall address-list add list=' + k.list + ' address=' + d + ' comment=' + q(k.nama)); });
+      L.push('/ip firewall filter add chain=forward dst-address-list=' + k.list + ' action=drop' + waktu + ' comment=' + q('Blokir ' + k.nama));
+    });
+    var custom = String(v.custom).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (custom.length) {
+      L.push('# Domain tambahan');
+      custom.forEach(function (d) { L.push('/ip firewall address-list add list=blokir-custom address=' + d + ' comment="Blokir tambahan"'); });
+      L.push('/ip firewall filter add chain=forward dst-address-list=blokir-custom action=drop' + waktu + ' comment="Blokir domain tambahan"');
+    }
+    if (!L.length) { L.push('# Tidak ada kategori yang dipilih dan tidak ada domain tambahan, tidak ada aturan yang dibuat.'); }
+    return H('Generator Blokir Situs') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Setiap kategori punya address list sendiri, jadi kamu bisa menyalakan atau mematikan satu kategori tanpa mengganggu kategori lain.',
+      'Address list berisi domain akan diterjemahkan RouterOS menjadi alamat IP secara berkala lewat DNS. Aturan forward membuang setiap paket yang tujuannya masuk daftar itu.',
+      'Jadwal memakai jam router, jadi pastikan NTP sudah sinkron. Rentang jam yang melewati tengah malam, misalnya 21:00 sampai 06:00, didukung langsung oleh pencocok waktu firewall.',
+      'Keterbatasan yang jujur: situs modern memakai HTTPS dan banyak domain bersama di CDN, jadi pemblokiran di tingkat IP tidak selalu presisi. Domain berakhiran .contoh wajib diganti dengan domain asli yang mau diblokir.'
+    ];
+  }));
+
+TOOLS.push(T('blokir-aplikasi', 'firewall', 'Blokir YouTube, TikTok, WA, FB, dan Lainnya', 'Block For Youtube, Tiktok, WA, FB, etc.',
+  'Blokir aplikasi populer dengan sekali centang: YouTube, TikTok, WhatsApp, Facebook, dan Instagram.',
+  [
+    f('yt', 'YouTube', 'check', true),
+    f('tt', 'TikTok', 'check', true),
+    f('wa', 'WhatsApp', 'check', false),
+    f('fb', 'Facebook', 'check', false),
+    f('ig', 'Instagram', 'check', false)
+  ],
+  function (v) {
+    var apps = [];
+    if (v.yt) { apps.push({ nama: 'YouTube', list: 'blokir-yt', domain: ['youtube.com', 'googlevideo.com', 'ytimg.com', 'ggpht.com'] }); }
+    if (v.tt) { apps.push({ nama: 'TikTok', list: 'blokir-tt', domain: ['tiktok.com', 'tiktokcdn.com', 'ibytedtos.com'] }); }
+    if (v.wa) { apps.push({ nama: 'WhatsApp', list: 'blokir-wa', domain: ['whatsapp.com', 'whatsapp.net'] }); }
+    if (v.fb) { apps.push({ nama: 'Facebook', list: 'blokir-fb', domain: ['facebook.com', 'fbcdn.net'] }); }
+    if (v.ig) { apps.push({ nama: 'Instagram', list: 'blokir-ig', domain: ['instagram.com', 'cdninstagram.com'] }); }
+    var L = [];
+    apps.forEach(function (a) {
+      L.push('# Aplikasi ' + a.nama);
+      a.domain.forEach(function (d) { L.push('/ip firewall address-list add list=' + a.list + ' address=' + d + ' comment=' + q(a.nama)); });
+      L.push('/ip firewall filter add chain=forward dst-address-list=' + a.list + ' action=drop comment=' + q('Blokir ' + a.nama));
+    });
+    if (!L.length) { L.push('# Tidak ada aplikasi yang dipilih, tidak ada aturan yang dibuat. Centang minimal satu aplikasi.'); }
+    return H('Blokir YouTube, TikTok, WA, FB, dan Lainnya') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Setiap aplikasi punya address list sendiri dengan domain domain utamanya, jadi satu aplikasi bisa dibuka lagi tanpa mengganggu blokir aplikasi lain.',
+      'RouterOS menyelesaikan domain dalam address list menjadi alamat IP secara berkala lewat DNS, lalu aturan forward membuang paket menuju alamat itu.',
+      'Keterbatasan yang jujur: aplikasi besar memakai banyak domain dan CDN bersama, jadi sebagian konten bisa tetap lolos lewat domain yang belum terdaftar. Tambahkan domain yang lolos ke address list yang sama.',
+      'Blokir ini berlaku untuk semua perangkat di LAN. Bila ada perangkat yang harus tetap bisa membuka aplikasi itu, buat pengecualian dengan aturan accept di atas aturan drop ini.'
     ];
   }));
 
@@ -2812,6 +3314,121 @@ TOOLS.push(T('ovpn-client', 'vpn', 'OpenVPN Client Dasar', 'Basic OpenVPN Client
     return [
       'Pengaturan cipher dan auth mengikuti bawaan RouterOS dan server. Bila server memakai pengaturan khusus, samakan lewat Winbox di menu interface ovpn-kantor setelah script ini jalan.',
       'Mode ethernet hanya dipakai bila desainnya memang menjembatani dua LAN. Untuk akses jarak jauh biasa, mode ip adalah pilihan yang benar.'
+    ];
+  }));
+
+
+TOOLS.push(T('all-traffic-vpn', 'vpn', 'Semua Trafik Lewat Tunnel VPN', 'All Traffic to VPN Tunnel',
+  'Arahkan seluruh trafik LAN melewati tunnel VPN, lengkap dengan kill switch yang memutus internet bila tunnel mati.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
+    f('vpniface', 'Nama interface VPN', 'text', 'wg0', { mono: 1, help: 'Nama interface VPN yang sudah tersambung, misalnya wg0 untuk WireGuard atau ovpn-out1 untuk OpenVPN.' }),
+    f('kill', 'Blokir internet bila tunnel mati (kill switch)', 'check', true, { help: 'Bila dicentang, ditambahkan rute blackhole cadangan supaya trafik tidak bocor lewat WAN biasa saat tunnel putus.' })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/routing table add name=ke-vpn fib');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' action=mark-routing new-routing-mark=ke-vpn passthrough=no comment="Semua trafik LAN ke tunnel VPN"');
+    L.push('/ip route add dst-address=0.0.0.0/0 gateway=' + v.vpniface + ' routing-table=ke-vpn distance=1 comment="Default lewat VPN"');
+    if (v.kill) { L.push('/ip route add dst-address=0.0.0.0/0 type=blackhole routing-table=ke-vpn distance=10 comment="Kill switch: buang trafik bila tunnel mati"'); }
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.vpniface + ' action=masquerade comment="NAT keluar VPN"');
+    return H('Semua Trafik Lewat Tunnel VPN') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Semua paket dari LAN ditandai dan diteruskan ke tabel routing khusus yang gatewaynya adalah interface VPN, jadi tidak ada trafik LAN yang keluar lewat WAN biasa.',
+      'Trafik router sendiri tidak ditandai, jadi router tetap bisa memeriksa pembaruan dan DNS lewat jalur biasanya.',
+      'Kill switch bekerja lewat jarak rute: rute blackhole berjarak 10 hanya aktif bila rute VPN berjarak 1 mati karena interface tunnel turun.',
+      'Pastikan tunnel VPN sudah tersambung sebelum menjalankan script ini. Bila tunnel belum ada, trafik LAN langsung terbuang oleh kill switch.'
+    ];
+  }));
+
+TOOLS.push(T('vpn-game-port-routing', 'vpn', 'Rute Game via VPN (Port)', 'VPN Routing Port Games',
+  'Lewatkan trafik game berdasarkan nomor port tujuannya melewati tunnel VPN, trafik lain tetap di jalur biasa.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
+    f('ports', 'Daftar port game', 'textarea', '3074\n27014-27050\n5000-5500', { mono: 1, help: 'Satu port atau rentang per baris. Port tiap game berbeda, sesuaikan dengan game yang dimainkan di jaringanmu.' }),
+    f('proto', 'Protokol', 'select', 'udp', { opts: ['udp', 'tcp'] }),
+    f('vpniface', 'Nama interface VPN', 'text', 'wg0', { mono: 1, help: 'Nama interface VPN yang sudah tersambung, misalnya wg0 untuk WireGuard atau ovpn-out1 untuk OpenVPN.' })
+  ],
+  function (v) {
+    var ports = String(v.ports).split('\n').map(function (s) { return s.trim(); }).filter(Boolean).join(',');
+    var L = [];
+    L.push('# Tandai koneksi game berdasarkan port tujuannya');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' protocol=' + v.proto + ' dst-port=' + ports + ' action=mark-connection new-connection-mark=game-vpn passthrough=yes comment="Tandai koneksi game"');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' connection-mark=game-vpn action=mark-routing new-routing-mark=ke-vpn-game passthrough=no comment="Arahkan game ke tunnel VPN"');
+    L.push('/routing table add name=ke-vpn-game fib');
+    L.push('/ip route add dst-address=0.0.0.0/0 gateway=' + v.vpniface + ' routing-table=ke-vpn-game comment="Rute game lewat VPN"');
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.vpniface + ' action=masquerade comment="NAT keluar VPN"');
+    return H('Rute Game via VPN (Port)') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Hanya koneksi game yang portnya cocok dengan daftar yang dilewatkan tunnel VPN. Trafik lain tetap keluar lewat WAN biasa.',
+      'Kebanyakan game memakai UDP, tetapi sebagian memakai TCP untuk login dan unduhan. Bila game tertentu tetap lewat jalur biasa, periksa protokol aslinya lalu ganti pilihan protokol di atas.',
+      'Daftar port adalah perkiraan awal. Bila game tertentu tetap tersendat, periksa port aslinya di dokumentasi game itu lalu tambahkan.',
+      'Tunnel VPN menambah jeda karena enkripsi dan jarak server. Bila ping game memburuk lewat VPN, pindahkan game itu kembali ke WAN biasa.'
+    ];
+  }));
+
+TOOLS.push(T('vpn-game-ip-routing', 'vpn', 'Rute Game via VPN (IP Server)', 'VPN Routing IP Address Games',
+  'Lewatkan trafik ke server game berdasarkan alamat IP servernya melewati tunnel VPN, trafik lain tetap di jalur biasa.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
+    f('ips', 'Alamat server game (IP atau CIDR)', 'textarea', '103.86.211.0/24\n45.112.90.0/24', { mono: 1, help: 'Satu alamat IP atau CIDR per baris. Ganti dengan alamat server game yang kamu pakai, lihat dokumentasi game itu.' }),
+    f('vpniface', 'Nama interface VPN', 'text', 'wg0', { mono: 1, help: 'Nama interface VPN yang sudah tersambung, misalnya wg0 untuk WireGuard atau ovpn-out1 untuk OpenVPN.' })
+  ],
+  function (v) {
+    var ips = String(v.ips).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var L = [];
+    ips.forEach(function (a) { L.push('/ip firewall address-list add list=server-game-vpn address=' + a + ' comment="Server game lewat VPN"'); });
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' dst-address-list=server-game-vpn action=mark-routing new-routing-mark=ke-vpn-game passthrough=no comment="Arahkan server game ke tunnel VPN"');
+    L.push('/routing table add name=ke-vpn-game fib');
+    L.push('/ip route add dst-address=0.0.0.0/0 gateway=' + v.vpniface + ' routing-table=ke-vpn-game comment="Rute game lewat VPN"');
+    L.push('/ip firewall nat add chain=srcnat out-interface=' + v.vpniface + ' action=masquerade comment="NAT keluar VPN"');
+    return H('Rute Game via VPN (IP Server)') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Cara ini lebih tepat daripada berdasarkan port, karena yang dipindah hanya server game yang terdaftar, bukan semua trafik yang kebetulan memakai port yang sama.',
+      'Daftar server game harus berisi alamat IP asli server game itu. Alamat ini berbeda tiap game dan tiap region, jadi periksa dokumentasi atau pantau koneksi game dengan Torch bila ragu.',
+      'Trafik selain ke server game tidak tersentuh aturan ini dan tetap memakai rute default biasa.',
+      'Tunnel VPN menambah jeda karena enkripsi dan jarak server. Bila ping game memburuk lewat VPN, pindahkan game itu kembali ke WAN biasa.'
+    ];
+  }));
+
+TOOLS.push(T('vpn-remote-client', 'vpn', 'Klien VPN Jarak Jauh (SSTP, L2TP, PPTP, OVPN)', 'VPN Remote SSTP - L2TP - PPTP - OVPN',
+  'Satu form untuk menyambung router sebagai klien ke server VPN jarak jauh. Pilih protokolnya, isi server dan akun, lalu tentukan jaringan kantor yang dirutekan lewat VPN.',
+  [
+    f('proto', 'Protokol VPN', 'select', 'sstp', { opts: [{ v: 'sstp', l: 'SSTP (port 443, menembus firewall ketat)' }, { v: 'l2tp', l: 'L2TP IPsec (bawaan Windows, Android, iOS)' }, { v: 'pptp', l: 'PPTP (lama, hanya bila server memaksa)' }, { v: 'ovpn', l: 'OpenVPN (port 1194)' }] }),
+    f('server', 'Alamat server VPN', 'text', 'vpn.kantor.contoh', { mono: 1, help: 'Nama host atau alamat IP publik server VPN.' }),
+    f('user', 'Nama pengguna', 'text', 'kantor', {}),
+    f('pass', 'Password', 'text', '', { mono: 1 }),
+    f('secret', 'IPsec secret (khusus L2TP)', 'text', '', { mono: 1, opt: 1, help: 'Kata sandi bersama tingkat tunnel untuk L2TP. Kosongkan bila server tidak memakainya, maka IPsec dimatikan.' }),
+    f('jaringan', 'Jaringan kantor di ujung VPN (opsional)', 'text', '', { mono: 1, opt: 1, ph: '10.20.0.0/16', help: 'Bila diisi, jaringan itu dirutekan lewat VPN. Bila kosong, tidak ada rute tambahan dan hanya trafik ke jaringan itu yang perlu diatur manual.' })
+  ],
+  function (v) {
+    var L = [];
+    var nama = 'vpn-jarak-jauh';
+    if (v.proto === 'sstp') {
+      L.push('/interface sstp-client add name=' + nama + ' connect-to=' + v.server + ' user=' + q(v.user) + ' password=' + q(v.pass) + ' profile=default-encryption tls-version=only-1.2 verify-server-certificate=no disabled=no comment="Klien VPN SSTP"');
+    } else if (v.proto === 'l2tp') {
+      var ipsec = v.secret ? ' use-ipsec=yes ipsec-secret=' + q(v.secret) : ' use-ipsec=no';
+      L.push('/interface l2tp-client add name=' + nama + ' connect-to=' + v.server + ' user=' + q(v.user) + ' password=' + q(v.pass) + ipsec + ' disabled=no comment="Klien VPN L2TP"');
+    } else if (v.proto === 'pptp') {
+      L.push('/interface pptp-client add name=' + nama + ' connect-to=' + v.server + ' user=' + q(v.user) + ' password=' + q(v.pass) + ' disabled=no comment="Klien VPN PPTP"');
+    } else {
+      L.push('/interface ovpn-client add name=' + nama + ' connect-to=' + v.server + ' port=1194 user=' + q(v.user) + ' password=' + q(v.pass) + ' mode=ip protocol=tcp disabled=no comment="Klien VPN OpenVPN"');
+    }
+    if (v.jaringan) { L.push('/ip route add dst-address=' + v.jaringan + ' gateway=' + nama + ' comment="Jaringan kantor lewat VPN"'); }
+    return H('Klien VPN Jarak Jauh (SSTP, L2TP, PPTP, OVPN)') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'SSTP membungkus VPN dalam TLS di port 443 sehingga lolos di jaringan yang hanya membuka port web. Opsi verify-server-certificate dimatikan di script ini, jadi ganti ke yes dan pasang sertifikat CA bila servermu menyediakannya.',
+      'L2TP memakai IPsec secret sebagai kata sandi bersama tingkat tunnel, berbeda dari password pengguna. Bila secret dikosongkan, IPsec dimatikan dan L2TP berjalan tanpa enkripsi.',
+      'PPTP adalah protokol lama tanpa enkripsi yang kuat. Pakai hanya bila server di ujung sana memang tidak menyediakan protokol lain.',
+      'Kolom jaringan kantor menentukan apa yang lewat tunnel. Bila dikosongkan, tunnel tersambung tetapi tidak ada trafik yang diarahkan ke sana sampai kamu menambahkan rutenya sendiri.'
     ];
   }));
 
