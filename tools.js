@@ -1000,6 +1000,249 @@ TOOLS.push(T('konfigurasi-dasar', 'dasar', 'Konfigurasi Dasar (Satu Script Awal)
     ];
   }));
 
+// Cache alamat MAC acak untuk tool Ganti atau Acak MAC Address Interface:
+// dibuat sekali saat mode acak dipilih, lalu dipakai ulang supaya script
+// tidak berubah-ubah setiap kali kolom lain disentuh. Pola yang sama
+// dengan macAcakCache milik tool Change MAC Address, tetapi cache
+// terpisah supaya kedua tool tidak saling menimpa.
+var macAcakCacheB = '';
+var macAcakPrevB = '';
+
+TOOLS.push(T('doh-servers', 'dasar', 'Server DNS over HTTPS (DoH)', 'DNS over HTTPS (DoH) Servers',
+  'Arahkan DNS router lewat DoH ke penyedia pilihanmu, supaya pertanyaan DNS terenkripsi dan tidak mudah diintip di jalur.',
+  [
+    f('penyedia', 'Penyedia DoH', 'select', 'cloudflare', { opts: [{ v: 'cloudflare', l: 'Cloudflare (https://cloudflare-dns.com/dns-query)' }, { v: 'google', l: 'Google (https://dns.google/dns-query)' }, { v: 'quad9', l: 'Quad9 (https://dns.quad9.net/dns-query)' }, { v: 'adguard', l: 'AdGuard (https://dns.adguard-dns.com/dns-query)' }, { v: 'kustom', l: 'Kustom (isi URL sendiri di bawah)' }] }),
+    f('urlKustom', 'URL DoH kustom', 'text', '', { opt: 1, mono: 1, ph: 'https://dns.kustom.contoh/dns-query', help: 'Hanya dipakai bila penyedia di atas Kustom.' }),
+    f('verifikasi', 'Verifikasi sertifikat server DoH', 'check', true, { help: 'Bila dicentang, router memeriksa sertifikat server DoH. Matikan hanya bila server memakai sertifikat sendiri.' })
+  ],
+  function (v) {
+    var urls = {
+      cloudflare: 'https://cloudflare-dns.com/dns-query',
+      google: 'https://dns.google/dns-query',
+      quad9: 'https://dns.quad9.net/dns-query',
+      adguard: 'https://dns.adguard-dns.com/dns-query'
+    };
+    var url = v.penyedia === 'kustom' ? (v.urlKustom || '') : urls[v.penyedia];
+    var L = [];
+    if (v.penyedia === 'kustom' && !v.urlKustom) {
+      L.push('# ISI URL DoH kustom di form: baris di bawah memakai URL contoh dan belum bisa dipakai.');
+      url = 'https://dns.kustom.contoh/dns-query';
+    }
+    L.push('/ip dns set use-doh-server=' + url + ' verify-doh-cert=' + (v.verifikasi ? 'yes' : 'no') + ' allow-remote-requests=yes');
+    return H('Server DNS over HTTPS (DoH)') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'DNS biasa mengirim pertanyaan nama domain sebagai teks polos, sehingga siapa pun di jalur bisa melihat situs apa yang kamu buka. DoH membungkus pertanyaan itu di dalam HTTPS, jadi isinya terenkripsi seperti halaman web biasa.',
+      'Verifikasi sertifikat memastikan router benar-benar berbicara dengan server DoH yang dipilih, bukan server palsu di tengah jalan. Mematikannya hanya masuk akal bila server DoH memakai sertifikat sendiri yang tidak dikenali router.',
+      'Allow-remote-requests membuat router melayani DNS untuk perangkat LAN, jadi perangkatmu memakai DoH lewat router tanpa perlu mengatur apa pun di tiap perangkat.',
+      'Catatan privasi yang jujur: penyedia DoH tetap bisa melihat semua pertanyaan DNS-mu, hanya saja pihak lain di jalur tidak. Pilih penyedia yang kebijakan privasinya kamu percaya.'
+    ];
+  }));
+
+TOOLS.push(T('netwatch-notify', 'dasar', 'Netwatch ke Telegram, WA, Email, SMS', 'Netwatch to Telegram, WA, Email, SMS',
+  'Pantau satu host dengan Netwatch dan beri kabar saat host putus atau kembali, lewat Telegram, email, WA, SMS, atau sekadar log.',
+  [
+    f('host', 'Host yang dipantau', 'ip', '8.8.8.8', { v: 'ip' }),
+    f('interval', 'Jeda pemeriksaan', 'select', '1m', { opts: ['30s', '1m', '5m'] }),
+    f('timeout', 'Batas waktu tunggu jawaban', 'text', '5s', { mono: 1, help: 'Contoh 5s. Bila host tidak menjawab dalam waktu ini, dianggap putus.' }),
+    f('metode', 'Cara memberi kabar', 'select', 'telegram', { opts: [{ v: 'telegram', l: 'Telegram (bot)' }, { v: 'email', l: 'Email (butuh /tool e-mail terpasang)' }, { v: 'wa', l: 'WhatsApp (butuh gateway pihak ketiga)' }, { v: 'sms', l: 'SMS (butuh gateway pihak ketiga)' }, { v: 'log', l: 'Catat ke log saja' }] }),
+    f('token', 'Token bot Telegram', 'text', '', { mono: 1, opt: 1, help: 'Dapat dari @BotFather. Hanya dipakai bila cara di atas Telegram. Token ini rahasia.' }),
+    f('chat', 'Chat ID tujuan', 'text', '', { mono: 1, opt: 1, ph: '123456789', help: 'ID chat kamu atau grup tempat bot berada. Hanya dipakai bila cara di atas Telegram.' }),
+    f('email', 'Alamat email tujuan', 'text', '', { opt: 1, ph: 'nama@domain.id', help: 'Hanya dipakai bila cara di atas Email.' })
+  ],
+  function (v) {
+    function enc(s) { return encodeURIComponent(s); }
+    var upPesan = 'Netwatch: ' + v.host + ' kembali terjangkau';
+    var downPesan = 'Netwatch: ' + v.host + ' tidak terjangkau';
+    function kirim(pesan) {
+      if (v.metode === 'telegram') {
+        var tok = v.token || 'TOKENBOT';
+        var ch = v.chat || 'CHATID';
+        return '/tool fetch url="https://api.telegram.org/bot' + tok + '/sendMessage?chat_id=' + ch + '&text=' + enc(pesan) + '" output=none';
+      }
+      if (v.metode === 'email') {
+        var em = v.email || 'tujuan@contoh.id';
+        return '/tool e-mail send to="' + em + '" subject="' + pesan + '" body="' + pesan + '"';
+      }
+      if (v.metode === 'wa') {
+        return '/tool fetch url="https://gateway-wa.contoh/kirim?pesan=' + enc(pesan) + '" output=none';
+      }
+      if (v.metode === 'sms') {
+        return '/tool fetch url="https://gateway-sms.contoh/kirim?pesan=' + enc(pesan) + '" output=none';
+      }
+      return '';
+    }
+    var upAksi = kirim(upPesan);
+    var downAksi = kirim(downPesan);
+    var up = '{:log info "' + upPesan + '"' + (upAksi ? '; ' + upAksi : '') + '}';
+    var down = '{:log warning "' + downPesan + '"' + (downAksi ? '; ' + downAksi : '') + '}';
+    var L = [];
+    if (v.metode === 'telegram' && (!v.token || !v.chat)) {
+      L.push('# ISI DULU token bot dan chat id di form: baris fetch di bawah memakai placeholder TOKENBOT dan CHATID dan pengiriman akan gagal sampai diganti.');
+    }
+    if (v.metode === 'email' && !v.email) {
+      L.push('# ISI DULU alamat email tujuan di form: baris di bawah memakai tujuan@contoh.id sebagai contoh.');
+      L.push('# Pastikan /tool e-mail sudah diatur dulu (server SMTP, pengguna, dan password), misalnya lewat tool Backup Otomatis ke Email.');
+    }
+    if (v.metode === 'wa' || v.metode === 'sms') {
+      L.push('# GANTI URL gateway di bawah dengan layanan ' + (v.metode === 'wa' ? 'WhatsApp' : 'SMS') + ' masing-masing, lengkap dengan nomor tujuan. URL gateway-wa.contoh dan gateway-sms.contoh hanya contoh penulisan dan tidak bisa dipakai langsung.');
+    }
+    L.push('/tool netwatch add host=' + v.host + ' interval=' + v.interval + ' timeout=' + v.timeout + ' up-script=' + up + ' down-script=' + down);
+    return H('Netwatch ke Telegram, WA, Email, SMS') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Netwatch mengirim ping ke host tujuan sesuai jeda yang kamu pilih. Bila host tidak menjawab dalam batas waktu, script down berjalan, dan bila kembali menjawab, script up berjalan.',
+      'Telegram memakai API bot dengan metode GET, jadi token dan chat id tertanam langsung di URL. Isi pesan di-encode supaya spasi dan karakter khusus tidak merusak URL.',
+      'Email memakai /tool e-mail bawaan router, jadi server SMTP, pengguna, dan password harus sudah diatur dulu di router sebelum script ini jalan.',
+      'WhatsApp dan SMS tidak punya jalur resmi dari router, jadi script memakai URL gateway pihak ketiga sebagai contoh. Ganti URL itu dengan layanan gateway yang kamu pakai, lengkap dengan nomor tujuan dan format yang diminta layanan itu.',
+      'Mode log saja hanya mencatat ke log router, tanpa pengiriman apa pun. Cocok bila kamu hanya butuh jejak kapan host putus dan kembali.'
+    ];
+  }));
+
+TOOLS.push(T('change-random-mac', 'dasar', 'Ganti atau Acak MAC Address Interface', 'Change or Random Mac Address Interface',
+  'Ganti alamat MAC satu interface ethernet, diisi manual atau dibuat acak (locally administered, diawali 02, 06, 0A, atau 0E).',
+  [
+    f('iface', 'Interface', 'text', 'ether2', { mono: 1 }),
+    f('mode', 'Alamat MAC baru', 'select', 'acak', { opts: [{ v: 'manual', l: 'Isi manual pada kolom di bawah' }, { v: 'acak', l: 'Buat acak otomatis' }] }),
+    f('mac', 'Alamat MAC baru', 'text', '', { opt: 1, mono: 1, ph: '02:11:22:33:44:55', help: 'Format enam pasang heksadesimal dipisah titik dua. Dipakai bila mode di atas "Isi manual".' }),
+    f('bounce', 'Matikan lalu nyalakan lagi interface sesudah ganti', 'check', false, { help: 'Membantu bila alamat baru tidak langsung aktif. Koneksi lewat interface ini putus sesaat.' })
+  ],
+  function (v) {
+    var mac = v.mac;
+    if (v.mode === 'acak') {
+      if (macAcakPrevB !== 'acak' || !macAcakCacheB) {
+        var first = [0x02, 0x06, 0x0A, 0x0E][Math.floor(Math.random() * 4)];
+        var b = [first];
+        for (var i = 1; i < 6; i++) { b.push(Math.floor(Math.random() * 256)); }
+        macAcakCacheB = b.map(function (x) { return (x < 16 ? '0' : '') + x.toString(16).toUpperCase(); }).join(':');
+      }
+      mac = macAcakCacheB;
+    }
+    macAcakPrevB = v.mode;
+    var L = [];
+    if (!mac) {
+      L.push('# Isi alamat MAC baru pada kolom di atas, atau pilih mode "Buat acak otomatis".');
+      return H('Ganti atau Acak MAC Address Interface') + L.join('\n') + '\n';
+    }
+    if (v.bounce) { L.push('/interface ethernet disable ' + v.iface); }
+    L.push('/interface ethernet set [find name=' + v.iface + '] mac-address=' + mac);
+    if (v.bounce) { L.push('/interface ethernet enable ' + v.iface); }
+    return H('Ganti atau Acak MAC Address Interface') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Alamat MAC adalah identitas perangkat di lapisan dua. Menggantinya berguna bila ISP mengunci layanan ke MAC tertentu, atau bila dua perangkat terlanjur memakai MAC yang sama.',
+      'Mode acak memakai oktet pertama 02, 06, 0A, atau 0E, yaitu alamat locally administered yang tidak akan bertabrakan dengan alamat pabrik perangkat lain.',
+      'Risiko duplikat tetap ada: bila dua interface di jaringan yang sama kebetulan memakai MAC yang sama, paket bisa nyasar ke perangkat yang salah. Periksa dulu daftar MAC di jaringanmu sebelum memakai alamat acak.',
+      'Perubahan MAC bisa membuat link putus sesaat, karena perangkat di ujung lain harus mempelajari ulang alamatnya lewat ARP. Opsi matikan lalu nyalakan lagi membantu bila alamat baru tidak langsung aktif.',
+      'Catat alamat MAC lama sebelum menjalankan script ini. Bila ISP ternyata mengunci MAC lama, kamu butuh alamat itu untuk kembali.'
+    ];
+  }));
+
+TOOLS.push(T('bonding-interface', 'dasar', 'Bonding Interface (Agregasi Link)', 'Bonding Interface / Link Aggregation',
+  'Gabung dua interface fisik menjadi satu interface bonding: tambah kecepatan, atau siapkan cadangan bila satu kabel putus.',
+  [
+    f('nama', 'Nama interface bonding', 'text', 'bonding1', { mono: 1 }),
+    f('mode', 'Mode bonding', 'select', '802.3ad', { opts: [{ v: '802.3ad', l: '802.3ad LACP (butuh switch mendukung LACP)' }, { v: 'balance-rr', l: 'balance-rr (round robin, paket bergiliran)' }, { v: 'active-backup', l: 'active-backup (satu aktif, satu cadangan)' }, { v: 'balance-xor', l: 'balance-xor (bagi per hash alamat)' }, { v: 'broadcast', l: 'broadcast (kirim ke semua slave)' }, { v: 'balance-tlb', l: 'balance-tlb (seimbang keluar, masuk tetap satu jalur)' }, { v: 'balance-alb', l: 'balance-alb (seimbang keluar dan masuk)' }] }),
+    f('slave1', 'Slave interface 1', 'text', 'ether3', { mono: 1, help: 'Interface fisik pertama yang digabung.' }),
+    f('slave2', 'Slave interface 2 (opsional)', 'text', 'ether4', { opt: 1, mono: 1, help: 'Interface fisik kedua. Kosongkan bila hanya memakai satu slave.' }),
+    f('ipBonding', 'Alamat IP bonding (CIDR, opsional)', 'cidr', '', { opt: 1, v: 'cidr', help: 'Bila diisi, alamat ini dipasang di interface bonding. Kosongkan bila bonding hanya dipakai sebagai anggota bridge.' }),
+    f('mtu', 'MTU bonding', 'number', '1500', { v: 'num', min: 576, max: 9000 })
+  ],
+  function (v) {
+    var slaves = v.slave1 + (v.slave2 ? ',' + v.slave2 : '');
+    var L = [];
+    L.push('/interface bonding add name=' + v.nama + ' mode=' + v.mode + ' slaves=' + slaves + ' mtu=' + v.mtu + ' link-monitoring=mii comment="Bonding ' + v.mode + '"');
+    if (v.mode === '802.3ad') {
+      L.push('# Mode 802.3ad memakai LACP: switch di ujung sana harus mendukung dan mengaktifkan LACP di port yang sama, kalau tidak bonding tidak akan naik.');
+    }
+    if (v.ipBonding) {
+      L.push('/ip address add address=' + v.ipBonding + ' interface=' + v.nama + ' comment="Alamat IP bonding"');
+    }
+    return H('Bonding Interface (Agregasi Link)') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Bonding menggabungkan dua interface fisik menjadi satu jalur logis. Trafik keluar dibagi ke slave yang tersedia, dan bila satu slave mati, trafik pindah ke slave yang masih hidup tanpa mengganti alamat IP.',
+      'Mode 802.3ad (LACP) adalah yang paling rapi karena router dan switch bernegosiasi dulu, tetapi switch di ujung sana wajib mendukung LACP. Tanpa LACP, bonding tidak akan naik.',
+      'Balance-rr membagi paket bergiliran ke semua slave dan tidak butuh dukungan switch, tetapi paket bisa sampai tidak berurutan sehingga sebagian aplikasi peka urutan bisa terganggu.',
+      'Active-backup adalah yang paling aman untuk cadangan: hanya satu slave yang aktif, slave lain diam sampai yang aktif putus. Kecepatannya tidak bertambah, tetapi ketahanannya paling sederhana.',
+      'Balance-xor membagi berdasarkan hash alamat, balance-tlb menyeimbangkan arah keluar saja, balance-alb menyeimbangkan kedua arah tetapi butuh ARP yang dimodifikasi router.',
+      'MTU bonding harus sama atau lebih kecil dari MTU slave terkecil. Bila slave memakai MTU 1500, jangan isi MTU bonding di atas itu.'
+    ];
+  }));
+
+TOOLS.push(T('discover-rogue-dhcp', 'dasar', 'Temukan DHCP Server Nakal Tak Dikenal', 'Discover Unknown DHCP Rogue Server',
+  'Awasi interface pilihanmu: bila ada DHCP server lain yang tidak dikenal membagi alamat di sana, router mencatat peringatan dan bila mau mengirimnya ke Telegram.',
+  [
+    f('iface', 'Interface yang diawasi', 'text', 'ether2', { mono: 1, help: 'Interface LAN tempat DHCP server nakal biasanya muncul.' }),
+    f('aksi', 'Aksi saat server nakal ketemu', 'select', 'log', { opts: [{ v: 'log', l: 'Catat ke log saja' }, { v: 'telegram', l: 'Catat ke log dan kirim ke Telegram' }] }),
+    f('token', 'Token bot Telegram', 'text', '', { mono: 1, opt: 1, help: 'Dapat dari @BotFather. Hanya dipakai bila aksi di atas Telegram. Token ini rahasia.' }),
+    f('chat', 'Chat ID tujuan', 'text', '', { mono: 1, opt: 1, ph: '123456789', help: 'ID chat kamu atau grup tempat bot berada. Hanya dipakai bila aksi di atas Telegram.' })
+  ],
+  function (v) {
+    var onAlert = ':log warning ("DHCP server nakal di interface " . $interface . " MAC " . $"mac-address")';
+    if (v.aksi === 'telegram') {
+      var tok = v.token || 'TOKENBOT';
+      var ch = v.chat || 'CHATID';
+      onAlert += '; /tool fetch url=("https://api.telegram.org/bot' + tok + '/sendMessage?chat_id=' + ch + '&text=DHCP%20nakal%20di%20" . $interface . "%20MAC%20" . $"mac-address") output=none';
+    }
+    var L = [];
+    if (v.aksi === 'telegram' && (!v.token || !v.chat)) {
+      L.push('# ISI DULU token bot dan chat id di form: perintah fetch di bawah memakai placeholder TOKENBOT dan CHATID dan pengiriman akan gagal sampai diganti.');
+    }
+    L.push('/ip dhcp-server alert add interface=' + v.iface + ' on-alert={' + onAlert + '} comment="Awasi DHCP server nakal"');
+    return H('Temukan DHCP Server Nakal Tak Dikenal') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'DHCP server nakal adalah server DHCP liar, misalnya router rumahan yang salah colok atau perangkat yang sengaja dipasang, yang membagi alamat IP dan gateway yang salah ke perangkat LAN.',
+      'Korban yang mendapat alamat dari server nakal akan memakai gateway yang salah, sehingga internetnya putus atau trafiknya lewat perangkat penyerang. Itu sebabnya server nakal harus cepat ketahuan.',
+      'Alert memakai DHCP alert bawaan RouterOS: router mendengarkan tawaran DHCP di interface yang diawasi, dan bila pengirimnya bukan server yang dikenal, script on-alert berjalan.',
+      'Script on-alert menerima dua variabel dari router, yaitu $interface (interface tempat tawaran itu terdengar) dan $"mac-address" (alamat MAC server nakal itu), lalu keduanya dicatat dan dikirim ke Telegram bila dipilih.',
+      'Tool ini hanya mendeteksi dan memberi kabar, tidak mematikan apa pun otomatis. Setelah peringatan muncul, cari perangkat dengan MAC itu di jaringanmu dan cabut kabelnya.'
+    ];
+  }));
+
+TOOLS.push(T('port-knocking-icmp', 'dasar', 'Port Knocking dengan ICMP + Ukuran Paket', 'Port Knocking with ICMP + Packet Size',
+  'Buka satu port hanya untuk yang sudah mengetuk dengan benar: kirim ping dengan ukuran paket berurutan, lalu port terbuka untuk alamatmu.',
+  [
+    f('ukuran', 'Urutan ukuran paket (pisah koma)', 'text', '100,200,300', { mono: 1, help: 'Ukuran paket IP per ketukan, berurutan. Contoh 100,200,300 berarti tiga ketukan.' }),
+    f('namaList', 'Nama dasar address-list ketukan', 'text', 'knock', { mono: 1, help: 'Daftar per tahap dibuat dari nama ini, daftar terakhir bernama sama dengan nama ini.' }),
+    f('timeout', 'Masa berlaku tiap ketukan', 'text', '30s', { mono: 1, help: 'Bila ketukan berikutnya tidak datang dalam waktu ini, ketukan sebelumnya hangus.' }),
+    f('port', 'Port yang dibuka setelah ketukan benar', 'number', '8291', { v: 'port', help: 'Contoh 8291 untuk Winbox.' }),
+    f('wan', 'Interface WAN', 'text', 'ether1', { mono: 1 }),
+    f('dropSisa', 'Tolak port itu dari yang belum mengetuk', 'check', true, { help: 'Bila dicentang, ditambahkan aturan drop untuk port ini dari semua alamat lain.' })
+  ],
+  function (v) {
+    var ukuran = String(v.ukuran).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var L = [];
+    var sebelum = '';
+    for (var i = 0; i < ukuran.length; i++) {
+      var daftar = i === ukuran.length - 1 ? v.namaList : v.namaList + '-' + (i + 1);
+      var syarat = sebelum ? ' src-address-list=' + sebelum : '';
+      L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=icmp packet-size=' + ukuran[i] + syarat + ' action=add-src-to-address-list address-list=' + daftar + ' address-list-timeout=' + v.timeout + ' comment="Ketukan ' + (i + 1) + ': ping ukuran ' + ukuran[i] + '"');
+      sebelum = daftar;
+    }
+    L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp dst-port=' + v.port + ' src-address-list=' + sebelum + ' action=accept comment="Buka port ' + v.port + ' untuk yang sudah mengetuk"');
+    if (v.dropSisa) {
+      L.push('/ip firewall filter add chain=input in-interface=' + v.wan + ' protocol=tcp dst-port=' + v.port + ' action=drop comment="Tolak port ' + v.port + ' dari yang belum mengetuk"');
+    }
+    return H('Port Knocking dengan ICMP + Ukuran Paket') + L.join('\n') + '\n';
+  },
+  function (v) {
+    var ukuran = String(v.ukuran).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    return [
+      'Cara mengetuk dari PC Linux: ping -s 72, lalu ping -s 172, lalu ping -s 272, satu per satu berurutan, masing-masing sekali. Angka -s itu ukuran data ping, sedangkan yang dicocokkan router adalah ukuran paket IP utuh, yaitu angka -s ditambah 28 (8 header ICMP dan 20 header IP).',
+      'Urutan ketukan yang dipakai tool ini adalah ' + ukuran.join(', ') + ' sebagai ukuran paket IP, jadi perintah ping -s yang cocok adalah ' + ukuran.map(function (s) { return String(parseInt(s, 10) - 28); }).join(', ') + '. Di Windows pakai ping -l dengan angka yang sama seperti -s.',
+      'Tiap ketukan hanya berlaku ' + v.timeout + '. Bila ketukan berikutnya terlambat, ketukan sebelumnya hangus dan kamu harus mengulang dari ketukan pertama.',
+      'Aturan accept di akhir hanya berlaku untuk alamat yang sudah menyelesaikan semua ketukan. Aturan drop menutup port ' + v.port + ' untuk semua alamat lain, jadi port itu tidak terlihat dari pemindai biasa.',
+      'Port knocking adalah pengaburan, bukan pengganti password. Tetap pakai password Winbox yang kuat dan kunci layanan jarak jauh dengan aturan firewall.'
+    ];
+  }));
+
 /* ================= Kategori: Routing ================= */
 
 TOOLS.push(T('static-route', 'routing', 'Rute Statis', 'Static Route',
@@ -2570,6 +2813,27 @@ TOOLS.push(T('blokir-aplikasi', 'firewall', 'Blokir YouTube, TikTok, WA, FB, dan
     ];
   }));
 
+TOOLS.push(T('block-sharing-hotspot-ttl', 'firewall', 'Blokir Berbagi Hotspot (Ubah TTL)', 'Block Sharing Hotspot with Change TTL',
+  'Turunkan TTL paket yang keluar dari interface hotspot, supaya perangkat yang menumpang lewat tethering kehabisan TTL dan putus.',
+  [
+    f('iface', 'Interface hotspot (arah keluar)', 'text', 'ether2', { mono: 1, help: 'Interface tempat perangkat hotspot tersambung.' }),
+    f('ttl', 'Nilai TTL baru', 'number', 1, { v: 'num', min: 1, max: 255, help: 'TTL 1 berarti paket hanya boleh lewat satu lompatan lagi.' }),
+    f('log', 'Catat tiap paket yang TTL-nya diubah ke log', 'check', true, { help: 'Hati-hati: log menjadi sangat ramai karena tiap paket dicatat. Matikan bila hanya butuh blokirnya saja.' })
+  ],
+  function (v) {
+    var s = '/ip firewall mangle add chain=postrouting out-interface=' + v.iface + ' action=change-ttl new-ttl=' + v.ttl + ' passthrough=yes comment="Turunkan TTL di pintu hotspot"';
+    if (v.log) { s += ' log=yes log-prefix="TTL-hotspot"'; }
+    return H('Blokir Berbagi Hotspot (Ubah TTL)') + s + '\n';
+  },
+  function () {
+    return [
+      'Setiap paket IP membawa TTL, hitungan lompatan yang tersisa. Perangkat yang menumpang lewat tethering mengirim paket dengan TTL yang sudah berkurang satu oleh HP penumpangnya, jadi setelah router menurunkannya satu lagi, paket itu kedaluwarsa sebelum sampai tujuan.',
+      'Aturan ini bekerja di chain postrouting, yaitu saat terakhir sebelum paket meninggalkan router, sehingga hanya paket yang keluar lewat interface hotspot yang disentuh.',
+      'Catatan jujur: cara ini juga memengaruhi perangkat yang sah bila TTL aslinya sudah 1, misalnya perangkat yang memang mengirim paket dengan TTL sangat rendah. Bila perangkat sah tiba-tiba putus setelah aturan ini aktif, naikkan nilai TTL barunya.',
+      'Opsi log mencatat tiap paket yang diubah. Untuk jaringan ramai, log bisa penuh dalam hitungan menit, jadi nyalakan hanya saat menguji, lalu matikan.'
+    ];
+  }));
+
 /* ================= Kategori: Queue ================= */
 
 TOOLS.push(T('simple-queue', 'queue', 'Simple Queue per Target', 'Simple Queue per Target',
@@ -2729,6 +2993,230 @@ TOOLS.push(T('remove-all-queue', 'queue', 'Remove All Queue', 'Remove All Queue'
       'Queue tree mengatur pembagian bandwidth bertingkat dengan prioritas. Menghapusnya membuat antrean induk dan anak hilang bersamaan.',
       'Tipe antrean kustom (misalnya PCQ buatan sendiri) hanya dihapus bila opsinya dicentang. Tipe bawaan RouterOS aman karena memang tidak bisa dihapus.',
       'Backup .rsc menyimpan seluruh konfigurasi ke menu Files. Bila penghapusan ternyata salah, pulihkan dengan menjalankan berkas backup itu dari terminal.'
+    ];
+  }));
+
+TOOLS.push(T('queue-type-optimizer', 'queue', 'Pengoptimal Jenis Queue', 'MikroTik Queue Type Optimizer',
+  'Pilih jenis antrean yang paling cocok (PCQ, SFQ, PFIFO, atau RED), atur parameternya, dan terapkan ke tipe bawaan plus satu contoh antrean.',
+  [
+    f('total', 'Total unduh (max-limit contoh)', 'text', '20M', { mono: 1, help: 'Total bandwidth yang dibagi, dipakai pada antrean contoh di bawah.' }),
+    f('perKlien', 'Batas per klien (pcq-rate)', 'text', '2M', { mono: 1, help: 'Jatah tiap pengguna bila jenis PCQ dipilih. Untuk jenis lain, nilai ini dipakai sebagai acuan hitung.' }),
+    f('target', 'Target antrean contoh (IP atau CIDR)', 'cidr', '192.168.88.0/24', { v: 'cidr' }),
+    f('jenis', 'Jenis antrean rekomendasi', 'select', 'pcq', { opts: [{ v: 'pcq', l: 'PCQ: bagi rata per alamat (paling umum)' }, { v: 'sfq', l: 'SFQ: adil per aliran, untuk satu jalur kecil' }, { v: 'pfifo', l: 'PFIFO: antrean sederhana pertama masuk pertama keluar' }, { v: 'red', l: 'RED: buang dini acak untuk hindari kemacetan total' }] })
+  ],
+  function (v) {
+    var totalK = rateToK(v.total) || 0;
+    var perK = rateToK(v.perKlien) || 0;
+    var mampu = (totalK && perK) ? Math.floor(totalK / perK) : 0;
+    var nama = 'antrean-' + v.jenis;
+    var L = [];
+    L.push('# Total ' + v.total + ' dibagi jatah ' + v.perKlien + ' per klien: sekitar ' + mampu + ' klien bisa penuh bersamaan.');
+    if (v.jenis === 'pcq') {
+      L.push('/queue type add name=' + nama + ' kind=pcq pcq-rate=' + v.perKlien + ' pcq-limit=50 pcq-total-limit=2000 pcq-classifier=dst-address comment="PCQ unduh, jatah per alamat tujuan"');
+      L.push('/queue type add name=' + nama + '-up kind=pcq pcq-rate=' + v.perKlien + ' pcq-limit=50 pcq-total-limit=2000 pcq-classifier=src-address comment="PCQ unggah, jatah per alamat sumber"');
+      L.push('/queue type set default kind=pcq pcq-rate=' + v.perKlien + ' pcq-limit=50 pcq-total-limit=2000');
+      L.push('/queue type set default-small kind=pcq pcq-rate=' + v.perKlien + ' pcq-limit=50 pcq-total-limit=2000');
+      L.push('/queue simple add name=contoh-pelanggan target=' + v.target + ' max-limit=' + v.total + '/' + v.total + ' queue=' + nama + '-up/' + nama + ' comment="Contoh: pelanggan memakai PCQ"');
+    } else if (v.jenis === 'sfq') {
+      L.push('/queue type add name=' + nama + ' kind=sfq sfq-perturb=5 sfq-allot=1514 comment="SFQ, acak ulang antrean tiap 5 detik"');
+      L.push('/queue type set default kind=sfq sfq-perturb=5 sfq-allot=1514');
+      L.push('/queue type set default-small kind=sfq sfq-perturb=5 sfq-allot=1514');
+      L.push('/queue simple add name=contoh-pelanggan target=' + v.target + ' max-limit=' + v.total + '/' + v.total + ' queue=' + nama + '/' + nama + ' comment="Contoh: pelanggan memakai SFQ"');
+    } else if (v.jenis === 'pfifo') {
+      L.push('/queue type add name=' + nama + ' kind=pfifo pfifo-limit=50 comment="PFIFO, tampung 50 paket"');
+      L.push('/queue type set default kind=pfifo pfifo-limit=50');
+      L.push('/queue type set default-small kind=pfifo pfifo-limit=50');
+      L.push('/queue simple add name=contoh-pelanggan target=' + v.target + ' max-limit=' + v.total + '/' + v.total + ' queue=' + nama + '/' + nama + ' comment="Contoh: pelanggan memakai PFIFO"');
+    } else {
+      L.push('/queue type add name=' + nama + ' kind=red red-limit=60 red-min-threshold=10 red-max-threshold=50 red-burst=20 red-avg-packet=1000 comment="RED, buang dini sebelum antrean penuh"');
+      L.push('/queue type set default kind=red red-limit=60 red-min-threshold=10 red-max-threshold=50 red-burst=20 red-avg-packet=1000');
+      L.push('/queue type set default-small kind=red red-limit=60 red-min-threshold=10 red-max-threshold=50 red-burst=20 red-avg-packet=1000');
+      L.push('/queue simple add name=contoh-pelanggan target=' + v.target + ' max-limit=' + v.total + '/' + v.total + ' queue=' + nama + '/' + nama + ' comment="Contoh: pelanggan memakai RED"');
+    }
+    return H('Pengoptimal Jenis Queue') + L.join('\n') + '\n';
+  },
+  function (v) {
+    var totalK = rateToK(v.total) || 0;
+    var perK = rateToK(v.perKlien) || 0;
+    var mampu = (totalK && perK) ? Math.floor(totalK / perK) : 0;
+    return [
+      'PCQ membuat sub antrean otomatis per alamat, jadi tiap pengguna mendapat jatah sendiri (' + v.perKlien + ') dan total ' + v.total + ' hanya tercapai bila sekitar ' + mampu + ' klien penuh bersamaan. Ini pilihan paling umum untuk RT RW net dan kos.',
+      'SFQ membagi keadilan per aliran, bukan per alamat: satu pengguna dengan banyak aliran tetap adil terhadap pengguna lain, tetapi tidak ada jatah per alamat seperti PCQ.',
+      'PFIFO adalah antrean paling sederhana, paket yang datang dulu dilayani dulu. Tanpa pembagian apa pun, satu aliran rakus bisa menguasai antrean.',
+      'RED membuang paket secara acak sebelum antrean penuh, supaya pengirim TCP melambat lebih awal dan antrean tidak sampai macet total. Cocok untuk jalur yang sering penuh, tetapi butuh penyetelan ambang yang hati-hati.',
+      'Arti parameter PCQ: pcq-rate adalah jatah per sub antrean, pcq-limit adalah jumlah paket yang ditampung tiap sub antrean, pcq-total-limit adalah jumlah paket total semua sub antrean. Classifier dst-address membagi arah unduh, src-address membagi arah unggah.'
+    ];
+  }));
+
+TOOLS.push(T('pcq-burst-calc', 'queue', 'Kalkulator PCQ Burst dan Ukuran Queue', 'PCQ Burst Rate + Queue Size Calculator',
+  'Hitung burst limit, threshold, dan limit-at dari kecepatan dasar, lalu hasilkan simple queue plus tipe PCQ yang memakai angka itu.',
+  [
+    f('nama', 'Nama antrean', 'text', 'Pelanggan-PCQ-Burst', {}),
+    f('target', 'Target (IP atau CIDR)', 'cidr', '192.168.88.10/32', { v: 'cidr' }),
+    f('dasar', 'Kecepatan dasar (Mbps)', 'text', '4', { mono: 1, v: 'num', help: 'Angka Mbps untuk unggah dan unduh. Desimal boleh, contoh 2.5' }),
+    f('burst', 'Burst limit (Mbps)', 'text', '8', { mono: 1, v: 'num', help: 'Lonjakan singkat di atas kecepatan dasar.' }),
+    f('threshold', 'Burst threshold (Mbps)', 'text', '3', { mono: 1, v: 'num', help: 'Selama rata-rata pemakaian di bawah nilai ini, burst diizinkan.' }),
+    f('waktu', 'Burst time (detik)', 'select', '8', { opts: ['8', '16'] }),
+    f('klien', 'Jumlah klien yang dihitung', 'number', 10, { v: 'num', min: 1, max: 100, help: 'Dipakai menghitung kebutuhan puncak bila semua klien burst bersamaan.' })
+  ],
+  function (v) {
+    var dasarK = Math.round(parseFloat(v.dasar) * 1024);
+    var burstK = Math.round(parseFloat(v.burst) * 1024);
+    var thrK = Math.round(parseFloat(v.threshold) * 1024);
+    var atK = Math.round(dasarK * 0.5);
+    var n = parseInt(v.klien, 10) || 1;
+    var puncakK = burstK * n;
+    return H('Kalkulator PCQ Burst dan Ukuran Queue') +
+      '# Hasil hitung untuk antrean ini:\n' +
+      '#   kecepatan dasar  = ' + fmtK(dasarK) + '\n' +
+      '#   burst-limit     = ' + fmtK(burstK) + '\n' +
+      '#   burst-threshold = ' + fmtK(thrK) + '\n' +
+      '#   burst-time      = ' + v.waktu + ' detik\n' +
+      '#   limit-at        = ' + fmtK(atK) + '  (50 persen dari kecepatan dasar)\n' +
+      '#   puncak bila ' + n + ' klien burst bersamaan = ' + fmtK(puncakK) + ' (pastikan jalurmu cukup)\n' +
+      '/queue type add name=pcq-burst kind=pcq pcq-rate=' + fmtK(dasarK) + ' pcq-limit=50 pcq-total-limit=2000 comment="PCQ untuk antrean burst"\n' +
+      '/queue simple add name=' + q(v.nama) + ' target=' + v.target +
+      ' max-limit=' + fmtK(dasarK) + '/' + fmtK(dasarK) +
+      ' burst-limit=' + fmtK(burstK) + '/' + fmtK(burstK) +
+      ' burst-threshold=' + fmtK(thrK) + '/' + fmtK(thrK) +
+      ' burst-time=' + v.waktu + 's/' + v.waktu + 's' +
+      ' limit-at=' + fmtK(atK) + '/' + fmtK(atK) +
+      ' queue=pcq-burst/pcq-burst\n';
+  },
+  function (v) {
+    var dasarK = Math.round(parseFloat(v.dasar) * 1024);
+    var burstK = Math.round(parseFloat(v.burst) * 1024);
+    return [
+      'Rumus yang dipakai: burst limit ' + fmtK(burstK) + ' adalah lonjakan yang diizinkan di atas kecepatan dasar ' + fmtK(dasarK) + ', threshold adalah batas rata-rata pemakaian yang masih mengizinkan lonjakan itu.',
+      'Threshold harus di bawah kecepatan dasar agar burst hanya muncul saat jaringan sedang santai. Bila threshold di atas dasar, burst hampir selalu aktif dan max-limit kehilangan maknanya.',
+      'Burst time adalah jendela rata-rata perhitungan, bukan lama lonjakan yang dijanjikan. Nilai 8 detik membuat lonjakan terasa responsif, 16 detik membuatnya lebih jarang.',
+      'Limit-at 50 persen memberi jatah terjamin bila antrean ini berbagi induk dengan antrean lain.',
+      'Tipe PCQ di atas membagi jatah per alamat, jadi bila targetmu satu jaringan, tiap alamat di dalamnya mendapat jatah ' + fmtK(dasarK) + ' sendiri, bukan berbagi satu jatah.'
+    ];
+  }));
+
+TOOLS.push(T('simple-queue-token-bucket', 'queue', 'Simple Queue + Token Bucket', 'Simple Queue + Token Bucket',
+  'Satu simple queue lengkap dengan burst ala token bucket: limit-at, max-limit, burst-limit, burst-threshold, dan burst-time.',
+  [
+    f('nama', 'Nama antrean', 'text', 'Pelanggan-Token-Bucket', {}),
+    f('target', 'Target (IP atau CIDR)', 'cidr', '192.168.88.10/32', { v: 'cidr' }),
+    f('limitAt', 'Limit terjamin (limit-at, format up/down)', 'text', '1M/2M', { mono: 1, help: 'Jatah terjamin, contoh 1M/2M. Formatnya unggah/unduh.' }),
+    f('maxLimit', 'Batas kecepatan (max-limit, format up/down)', 'text', '5M/10M', { mono: 1, help: 'Langit-langit kecepatan, contoh 5M/10M.' }),
+    f('burstLimit', 'Burst limit (format up/down)', 'text', '10M/20M', { mono: 1, help: 'Lonjakan singkat di atas max-limit, contoh 10M/20M.' }),
+    f('burstThreshold', 'Burst threshold (format up/down)', 'text', '7M/14M', { mono: 1, help: 'Rata-rata pemakaian di bawah nilai ini mengizinkan burst, contoh 7M/14M.' }),
+    f('burstTime', 'Burst time (format up/down)', 'text', '8s/8s', { mono: 1, help: 'Jendela rata-rata perhitungan burst, contoh 8s/8s.' })
+  ],
+  function (v) {
+    return H('Simple Queue + Token Bucket') +
+      '/queue simple add name=' + q(v.nama) + ' target=' + v.target +
+      ' limit-at=' + v.limitAt + ' max-limit=' + v.maxLimit +
+      ' burst-limit=' + v.burstLimit + ' burst-threshold=' + v.burstThreshold + ' burst-time=' + v.burstTime + '\n';
+  },
+  function () {
+    return [
+      'Token bucket adalah gambaran cara kerja burst: token terkumpul pelan-pelan sampai penuh, lalu dipakai sekaligus untuk lonjakan kecepatan. Burst-threshold menentukan seberapa cepat token terkumpul, burst-time menentukan jendela hitung rata-ratanya.',
+      'Limit-at adalah jatah terjamin yang dipesan untuk target ini. Bila antrean ini berada di bawah antrean induk, jatah ini yang dijamin tersedia walau antrean lain sedang ramai.',
+      'Max-limit adalah langit-langit kecepatan normal. Burst-limit hanya boleh dilewati sebentar, selama rata-rata pemakaian masih di bawah burst-threshold.',
+      'Burst-threshold yang terlalu dekat dengan burst-limit membuat burst hampir tidak pernah berhenti, sehingga max-limit kehilangan maknanya. Taruh threshold di sekitar 70 persen dari burst-limit.'
+    ];
+  }));
+
+TOOLS.push(T('simple-queue-shared-upto', 'queue', 'Simple Queue + Bandwidth Shared Up-To', 'Simple Queue + Bandwidth Shared Up-To',
+  'Satu antrean induk berisi total bandwidth, lalu tiap klien mendapat antrean anak dengan batas up-to sendiri.',
+  [
+    f('nama', 'Nama dasar antrean (induk dan anak)', 'text', 'Berbagi-01', {}),
+    f('target', 'Jaringan yang dibagi (CIDR)', 'cidr', '192.168.88.0/24', { v: 'cidr', help: 'Alamat IP tiap anak dihitung dari jaringan ini, mulai dari host ke-10. Ganti dengan IP pelanggan sebenarnya.' }),
+    f('total', 'Total bandwidth bersama', 'text', '20M', { mono: 1 }),
+    f('klien', 'Jumlah klien (antrean anak)', 'number', 5, { v: 'num', min: 2, max: 10 }),
+    f('perKlien', 'Limit per klien (up-to)', 'text', '4M', { mono: 1 })
+  ],
+  function (v) {
+    var n = parseInt(v.klien, 10) || 2;
+    var dasar = netPart(v.target);
+    var L = [];
+    L.push('/queue simple add name=' + q(v.nama + '-induk') + ' target=' + v.target + ' max-limit=' + v.total + '/' + v.total + ' comment="Induk berbagi, total ' + v.total + '"');
+    for (var i = 0; i < n; i++) {
+      var ip = ipAdd(dasar, 10 + i);
+      L.push('/queue simple add name=' + q(v.nama + '-klien-' + (i + 1)) + ' target=' + ip + '/32 parent=' + q(v.nama + '-induk') + ' max-limit=' + v.perKlien + '/' + v.perKlien + ' comment="Klien ' + (i + 1) + ': ganti ' + ip + ' dengan IP pelanggan sebenarnya"');
+    }
+    return H('Simple Queue + Bandwidth Shared Up-To') + L.join('\n') + '\n';
+  },
+  function (v) {
+    var n = parseInt(v.klien, 10) || 2;
+    return [
+      'Up-to berarti tiap klien boleh mencapai ' + v.perKlien + ' bila jalurnya sedang kosong, tetapi total ' + n + ' klien tidak pernah melewati ' + v.total + ' karena antrean induk membatasinya.',
+      'Ini berbeda dengan dedicated: pada dedicated tiap klien selalu mendapat jatah tetap walau tidak dipakai, sedangkan up-to membiarkan jatah yang menganggur dipakai klien lain.',
+      'Antrean anak memakai parent ke antrean induk, jadi hitungan pemakaian tiap anak dijumlahkan ke induk sebelum dibandingkan dengan total.',
+      'Alamat IP anak dihitung otomatis dari jaringan yang kamu isi, mulai dari host ke-10. Bila pelangganmu memakai IP lain, ubah target tiap baris anak sebelum menjalankan script.'
+    ];
+  }));
+
+TOOLS.push(T('queue-tree-shared-upto', 'queue', 'Queue Tree + Bandwidth Shared Up-To', 'Queue Tree + Bandwidth Shared Up-To',
+  'Satu antrean induk di parent global, lalu tiap kelas mendapat antrean anak dengan batas up-to sendiri, lengkap dengan mangle penanda paket.',
+  [
+    f('wan', 'Interface WAN (arah unduh)', 'text', 'ether1', { mono: 1, help: 'Mangle membaca trafik yang masuk dari interface ini untuk dibagi ke kelas-kelas.' }),
+    f('total', 'Total bandwidth induk', 'text', '50M', { mono: 1 }),
+    f('kelas', 'Jumlah kelas (antrean anak)', 'number', 4, { v: 'num', min: 2, max: 8 }),
+    f('perKelas', 'Limit per kelas (up-to)', 'text', '10M', { mono: 1 }),
+    f('mangle', 'Buatkan mangle penanda paket per kelas', 'check', true, { help: 'Bila dicentang, koneksi dibagi ke kelas-kelas memakai PCC. Bila tidak, kamu harus membuat penanda paket sendiri.' })
+  ],
+  function (v) {
+    var n = parseInt(v.kelas, 10) || 2;
+    var L = [];
+    L.push('/queue tree add name=induk-bersama parent=global max-limit=' + v.total + ' comment="Induk berbagi, total ' + v.total + '"');
+    if (v.mangle) {
+      L.push('# Bagi koneksi ke ' + n + ' kelas dengan PCC, tiap koneksi menempel di satu kelas');
+      for (var i = 0; i < n; i++) {
+        L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.wan + ' per-connection-classifier=both-addresses-and-ports:' + n + '/' + i + ' action=mark-packet new-packet-mark=kelas-' + (i + 1) + ' passthrough=no comment="Tandai kelas ' + (i + 1) + '"');
+      }
+    } else {
+      L.push('# Tanpa mangle: tambahkan sendiri penanda paket kelas-1 sampai kelas-' + n + ', atau centang opsi mangle di atas.');
+    }
+    for (var j = 0; j < n; j++) {
+      L.push('/queue tree add name=kelas-' + (j + 1) + ' parent=induk-bersama packet-mark=kelas-' + (j + 1) + ' max-limit=' + v.perKelas + ' comment="Kelas ' + (j + 1) + ' up-to ' + v.perKelas + '"');
+    }
+    return H('Queue Tree + Bandwidth Shared Up-To') + L.join('\n') + '\n';
+  },
+  function (v) {
+    var n = parseInt(v.kelas, 10) || 2;
+    return [
+      'Parent global berarti antrean induk membaca seluruh trafik router. Tiap kelas anak dibatasi ' + v.perKelas + ' up-to, tetapi total semuanya tidak pernah melewati ' + v.total + ' karena induk membatasinya.',
+      'Mangle membagi koneksi ke ' + n + ' kelas memakai PCC: hash alamat dan port tiap koneksi menentukan kelasnya, dan satu koneksi selalu menempel di kelas yang sama sampai selesai.',
+      'Penanda di atas membaca trafik dari arah WAN, jadi pembagian ini mengatur arah unduh. Untuk arah unggah, duplikasi aturan mangle dengan in-interface mengarah ke LAN.',
+      'Queue tree hanya bekerja pada paket yang sudah bertanda atau yang lewat parent. Trafik tanpa tanda kelas tidak masuk antrean anak mana pun dan hanya dibatasi induk.'
+    ];
+  }));
+
+TOOLS.push(T('pcq-queue-tree-simple', 'queue', 'PCQ untuk Queue Tree dan Simple Queue', 'PCQ for Queue Tree and Queue Simple',
+  'Buat satu jenis PCQ, lalu pakai di simple queue, di queue tree, atau di keduanya sekaligus.',
+  [
+    f('nama', 'Nama jenis PCQ', 'text', 'pcq-pelanggan', { mono: 1 }),
+    f('rate', 'Jatah PCQ per klien', 'text', '2M', { mono: 1 }),
+    f('limit', 'PCQ limit (jumlah paket per sub antrean)', 'number', 50, { v: 'num', min: 10, max: 500 }),
+    f('totalLimit', 'PCQ total limit (jumlah paket semua sub antrean)', 'number', 2000, { v: 'num', min: 100, max: 10000 }),
+    f('total', 'Total bandwidth (max-limit)', 'text', '20M', { mono: 1 }),
+    f('target', 'Target simple queue (IP atau CIDR)', 'cidr', '192.168.88.0/24', { v: 'cidr', help: 'Hanya dipakai bila mode memakai simple queue.' }),
+    f('mode', 'Pakai PCQ di mana', 'select', 'keduanya', { opts: [{ v: 'simple-queue', l: 'Simple queue saja' }, { v: 'queue-tree', l: 'Queue tree saja' }, { v: 'keduanya', l: 'Keduanya: simple queue dan queue tree' }] })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/queue type add name=' + v.nama + ' kind=pcq pcq-rate=' + v.rate + ' pcq-limit=' + v.limit + ' pcq-total-limit=' + v.totalLimit + ' pcq-classifier=dst-address comment="PCQ unduh, per alamat tujuan"');
+    L.push('/queue type add name=' + v.nama + '-up kind=pcq pcq-rate=' + v.rate + ' pcq-limit=' + v.limit + ' pcq-total-limit=' + v.totalLimit + ' pcq-classifier=src-address comment="PCQ unggah, per alamat sumber"');
+    if (v.mode === 'simple-queue' || v.mode === 'keduanya') {
+      L.push('/queue simple add name=pelanggan-pcq target=' + v.target + ' max-limit=' + v.total + '/' + v.total + ' queue=' + v.nama + '-up/' + v.nama + ' comment="Simple queue memakai PCQ"');
+    }
+    if (v.mode === 'queue-tree' || v.mode === 'keduanya') {
+      L.push('/queue tree add name=unduh-pcq parent=global max-limit=' + v.total + ' queue=' + v.nama + ' comment="Queue tree unduh memakai PCQ"');
+      L.push('/queue tree add name=unggah-pcq parent=global max-limit=' + v.total + ' queue=' + v.nama + '-up comment="Queue tree unggah memakai PCQ"');
+    }
+    return H('PCQ untuk Queue Tree dan Simple Queue') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'PCQ cocok bila banyak pengguna berbagi satu jalur: tiap alamat mendapat sub antrean sendiri dengan jatah yang sama, jadi satu pengguna rakus tidak bisa menghabiskan jatah pengguna lain.',
+      'Dua jenis dibuat sekaligus karena arahnya berbeda: unduh diklasifikasikan per alamat tujuan, unggah per alamat sumber. Satu jenis saja akan membagi salah satu arah secara keliru.',
+      'Simple queue lebih mudah dibaca karena satu baris per target, sedangkan queue tree lebih luwes untuk pembagian bertingkat dan prioritas.',
+      'Bila PCQ dipakai di keduanya sekaligus untuk target yang sama, trafik dibatasi dua kali. Pilih satu mode saja untuk satu target, atau bedakan targetnya.'
     ];
   }));
 
@@ -3152,6 +3640,252 @@ TOOLS.push(T('walled-garden', 'hotspot', 'Walled Garden', 'Walled Garden',
       'Batasi walled garden hanya untuk situs yang benar-benar perlu, seperti toko aplikasi dan halaman pembayaran. Daftar yang terlalu longgar sama saja dengan membuka hotspot tanpa login.'
     ];
   }));
+
+TOOLS.push(T('hotspot-wizard-mudah', 'hotspot', 'Wizard Konfigurasi Hotspot Mudah', 'Easy Hotspot Configuration Wizard',
+  'Satu paket membangun hotspot lengkap: alamat gateway, pool, DHCP server, profil hotspot, server hotspot, profil pengguna, dan admin pertama.',
+  [
+    f('iface', 'Interface hotspot', 'text', 'ether2', { mono: 1 }),
+    f('net', 'Jaringan hotspot (CIDR)', 'cidr', '192.168.5.0/24', { v: 'cidr' }),
+    f('poolFrom', 'Awal pool DHCP', 'ip', '192.168.5.10', { v: 'ip' }),
+    f('poolTo', 'Akhir pool DHCP', 'ip', '192.168.5.100', { v: 'ip' }),
+    f('dns', 'Server DNS untuk klien hotspot', 'text', '8.8.8.8,1.1.1.1', { mono: 1, help: 'Pisahkan dengan koma bila lebih dari satu.' }),
+    f('profil', 'Nama profil pengguna hotspot', 'text', 'profil-pelanggan', { mono: 1 }),
+    f('rate', 'Rate-limit profil (format up/down)', 'text', '2M/5M', { mono: 1, help: 'Batas kecepatan tiap pengguna profil ini, contoh 2M/5M.' }),
+    f('adminUser', 'Nama admin hotspot pertama', 'text', 'admin', {}),
+    f('adminPass', 'Password admin hotspot pertama', 'text', 'admin123', { mono: 1, help: 'Ganti dengan password yang kuat sebelum menjalankan script.' }),
+    f('loginPage', 'Halaman login', 'select', 'bawaan', { opts: [{ v: 'bawaan', l: 'Bawaan MikroTik (folder hotspot)' }, { v: 'racik', l: 'Template login RacikRouter (login.html)' }] })
+  ],
+  function (v) {
+    var gw = ipAdd(netPart(v.net), 1);
+    var pref = prefixPart(v.net);
+    var htmlDir = v.loginPage === 'racik' ? 'hotspot-racik' : 'hotspot';
+    var L = [];
+    L.push('/ip address add address=' + gw + '/' + pref + ' interface=' + v.iface + ' comment="Gateway hotspot"');
+    L.push('/ip pool add name=pool-hotspot ranges=' + v.poolFrom + '-' + v.poolTo);
+    L.push('/ip dhcp-server network add address=' + netPart(v.net) + '/' + pref + ' gateway=' + gw + ' dns-server=' + v.dns);
+    L.push('/ip dhcp-server add name=dhcp-hotspot interface=' + v.iface + ' address-pool=pool-hotspot disabled=no');
+    L.push('/ip hotspot profile add name=hsprof-hotspot hotspot-address=' + gw + ' dns-name=hotspot.wifi html-directory=' + htmlDir);
+    L.push('/ip hotspot add name=hotspot-utama interface=' + v.iface + ' address-pool=pool-hotspot profile=hsprof-hotspot disabled=no');
+    L.push('/ip hotspot user profile add name=' + q(v.profil) + ' rate-limit=' + v.rate + ' shared-users=1 comment="Profil pelanggan hotspot"');
+    L.push('/ip hotspot user add name=' + q(v.adminUser) + ' password=' + q(v.adminPass) + ' profile=' + q(v.profil) + ' comment="Admin hotspot pertama"');
+    if (v.loginPage === 'racik') {
+      L.push('# Unggah login.html dari tool Template Halaman Login Hotspot ke folder hotspot-racik di menu Files router ini.');
+    }
+    return H('Wizard Konfigurasi Hotspot Mudah') + L.join('\n') + '\n';
+  },
+  function (v) {
+    return [
+      'Gateway hotspot diambil dari jaringan yang kamu isi, yaitu alamat pertama setelah alamat jaringan (' + ipAdd(netPart(v.net), 1) + '). Perangkat hotspot otomatis memakai alamat ini sebagai gateway.',
+      'Pool DHCP menentukan rentang alamat yang dibagikan ke perangkat tamu. Pastikan rentangnya berada di dalam jaringan hotspot dan tidak menabrak alamat gateway.',
+      'Profil pengguna ' + v.profil + ' membawa rate-limit ' + v.rate + ', jadi tiap pengguna yang memakai profil ini dibatasi kecepatannya tanpa perlu aturan queue tambahan.',
+      'Halaman login bawaan memakai folder hotspot, sedangkan template RacikRouter memakai folder hotspot-racik. Bila memilih template, unggah dulu berkas login.html dari tool Template Halaman Login Hotspot sebelum ada tamu yang login.',
+      'Admin pertama dibuat dengan profil pelanggan yang sama, jadi kecepatan admin ikut dibatasi profil itu. Buat profil khusus tanpa rate-limit bila admin butuh kecepatan penuh.'
+    ];
+  }));
+
+TOOLS.push(T('ppp-secrets-generator', 'hotspot', 'Generator Username Password PPP Secrets', 'PPP Secrets Username Password Generator',
+  'Cetak sejumlah akun PPP sekaligus: username dan password acak yang berbeda tiap akun, lengkap dengan profil dan layanan.',
+  [
+    f('prefix', 'Awalan username', 'text', 'ppp-', { mono: 1, help: 'Awalan ini menempel di depan setiap username, misalnya ppp-AB12CD.' }),
+    f('jumlah', 'Jumlah akun', 'number', 5, { v: 'num', min: 2, max: 20 }),
+    f('panjangUser', 'Panjang kode username (huruf dan angka)', 'number', 6, { v: 'num', min: 4, max: 12 }),
+    f('panjangPass', 'Panjang password', 'number', 8, { v: 'num', min: 6, max: 16 }),
+    f('profil', 'Profil PPP', 'text', 'default', { mono: 1, help: 'Nama profil PPP yang sudah ada di router.' }),
+    f('layanan', 'Layanan (service)', 'select', 'pppoe', { opts: [{ v: 'pppoe', l: 'PPPoE' }, { v: 'pptp', l: 'PPTP' }, { v: 'l2tp', l: 'L2TP' }, { v: 'any', l: 'Any (semua layanan)' }] })
+  ],
+  function (v) {
+    var charsUser = 'abcdefghjkmnpqrstuvwxyz23456789';
+    var charsPass = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    var n = parseInt(v.jumlah, 10) || 2;
+    var lenU = parseInt(v.panjangUser, 10) || 6;
+    var lenP = parseInt(v.panjangPass, 10) || 8;
+    function acak(chars, len) {
+      var s = '';
+      for (var j = 0; j < len; j++) { s += chars.charAt(Math.floor(Math.random() * chars.length)); }
+      return s;
+    }
+    var seen = {};
+    var L = [];
+    L.push('# ' + n + ' akun PPP, profil ' + v.profil + ', layanan ' + v.layanan + ', dibuat acak saat script digenerate');
+    for (var i = 0; i < n; i++) {
+      var nama = '';
+      do { nama = v.prefix + acak(charsUser, lenU); } while (seen[nama]);
+      seen[nama] = true;
+      L.push('/ppp secret add name=' + q(nama) + ' password=' + q(acak(charsPass, lenP)) + ' profile=' + q(v.profil) + ' service=' + v.layanan + ' comment="Akun PPP RacikRouter"');
+    }
+    return H('Generator Username Password PPP Secrets') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Setiap akun dibuat sebagai satu PPP secret: username berisi awalan ditambah kode acak, password dibuat acak terpisah, jadi username dan password tidak sama.',
+      'Kode acak memakai huruf dan angka yang tidak mudah tertukar (tanpa 0, O, 1, dan I), dan username dijamin berbeda satu sama lain dalam satu batch.',
+      'Profil menentukan kecepatan dan aturan lain untuk akun ini. Pastikan nama profil yang ditulis sudah ada di router, karena profil yang belum ada membuat akun gagal dibuat.',
+      'Layanan any berarti akun bisa dipakai semua layanan PPP (PPPoE, PPTP, L2TP). Pilih satu layanan saja bila akun itu memang hanya untuk satu jenis koneksi.',
+      'Akun dibuat ulang setiap kali script di-generate, jadi salin atau unduh hasilnya segera setelah jumlah dan profilnya cocok, sebelum mengubah kolom apa pun.'
+    ];
+  }));
+
+TOOLS.push(T('hotspot-userpass-generator', 'hotspot', 'Generator Username Password Hotspot', 'Hotspot Username Password Generator',
+  'Cetak sejumlah akun hotspot sekaligus: username dan password acak yang berbeda tiap akun, lengkap dengan profil dan masa aktif.',
+  [
+    f('prefix', 'Awalan username', 'text', 'hs-', { mono: 1, help: 'Awalan ini menempel di depan setiap username, misalnya hs-AB12CD.' }),
+    f('jumlah', 'Jumlah akun', 'number', 5, { v: 'num', min: 2, max: 20 }),
+    f('panjangUser', 'Panjang kode username (huruf dan angka)', 'number', 6, { v: 'num', min: 4, max: 12 }),
+    f('panjangPass', 'Panjang password', 'number', 8, { v: 'num', min: 6, max: 16 }),
+    f('profil', 'Profil pengguna hotspot', 'text', 'default', { mono: 1, help: 'Nama profil hotspot yang sudah ada di router.' }),
+    f('masa', 'Masa aktif per akun (opsional)', 'text', '', { opt: 1, ph: '1d', help: 'Contoh 5h untuk lima jam, 1d untuk satu hari. Kosongkan bila akun berlaku tanpa batas waktu.' })
+  ],
+  function (v) {
+    var charsUser = 'abcdefghjkmnpqrstuvwxyz23456789';
+    var charsPass = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    var n = parseInt(v.jumlah, 10) || 2;
+    var lenU = parseInt(v.panjangUser, 10) || 6;
+    var lenP = parseInt(v.panjangPass, 10) || 8;
+    function acak(chars, len) {
+      var s = '';
+      for (var j = 0; j < len; j++) { s += chars.charAt(Math.floor(Math.random() * chars.length)); }
+      return s;
+    }
+    var seen = {};
+    var L = [];
+    L.push('# ' + n + ' akun hotspot, profil ' + v.profil + ', dibuat acak saat script digenerate');
+    for (var i = 0; i < n; i++) {
+      var nama = '';
+      do { nama = v.prefix + acak(charsUser, lenU); } while (seen[nama]);
+      seen[nama] = true;
+      var u = '/ip hotspot user add name=' + q(nama) + ' password=' + q(acak(charsPass, lenP)) + ' profile=' + q(v.profil);
+      if (v.masa) { u += ' limit-uptime=' + v.masa; }
+      u += ' comment="Akun hotspot RacikRouter"';
+      L.push(u);
+    }
+    return H('Generator Username Password Hotspot') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Setiap akun dibuat sebagai satu pengguna hotspot: username berisi awalan hs- ditambah kode acak, password dibuat acak terpisah, jadi username dan password tidak sama.',
+      'Kode acak memakai huruf dan angka yang tidak mudah tertukar (tanpa 0, O, 1, dan I), dan username dijamin berbeda satu sama lain dalam satu batch.',
+      'Profil menentukan kecepatan dan jumlah perangkat per akun. Pastikan nama profil yang ditulis sudah ada di router, karena profil yang belum ada membuat akun gagal dibuat.',
+      'Masa aktif menempel pada tiap akun, bukan pada profil, sehingga satu batch bisa punya masa aktif yang berbeda dengan batch lain walau profilnya sama.',
+      'Akun dibuat ulang setiap kali script di-generate, jadi salin atau unduh hasilnya segera setelah jumlah dan profilnya cocok, sebelum mengubah kolom apa pun.'
+    ];
+  }));
+
+TOOLS.push(T('hotspot-bandwidth-shared-upto', 'hotspot', 'Bandwidth Share Up-To untuk Hotspot', 'Bandwidth Share Up-To for Hotspot',
+  'Profil hotspot dengan batas per pengguna up-to, plus antrean induk opsional yang menjaga total bersama jaringan hotspot.',
+  [
+    f('profil', 'Nama profil hotspot', 'text', 'profil-berbagi', { mono: 1 }),
+    f('total', 'Total bandwidth bersama', 'text', '20M', { mono: 1 }),
+    f('pengguna', 'Jumlah pengguna bersamaan yang dihitung', 'number', 5, { v: 'num', min: 2, max: 20, help: 'Dipakai menghitung puncak bila semua pengguna penuh bersamaan.' }),
+    f('perPengguna', 'Limit per pengguna (up-to)', 'text', '4M', { mono: 1 }),
+    f('sharedUsers', 'Perangkat bersamaan per pengguna (shared-users)', 'number', 2, { v: 'num', min: 1, max: 10, help: 'Satu akun boleh dipakai berapa perangkat sekaligus.' }),
+    f('jaringan', 'Jaringan hotspot untuk antrean induk (CIDR)', 'cidr', '192.168.5.0/24', { v: 'cidr', help: 'Hanya dipakai bila antrean induk dicentang.' }),
+    f('queue', 'Tambahkan antrean induk total bersama', 'check', true, { help: 'Bila dicentang, dibuat simple queue induk yang membatasi total jaringan hotspot.' })
+  ],
+  function (v) {
+    var perK = rateToK(v.perPengguna) || 0;
+    var n = parseInt(v.pengguna, 10) || 1;
+    var puncak = fmtK(perK * n);
+    var L = [];
+    L.push('# ' + n + ' pengguna x ' + v.perPengguna + ' = puncak ' + puncak + ' melawan total bersama ' + v.total + '.');
+    L.push('/ip hotspot user profile add name=' + q(v.profil) + ' rate-limit=' + v.perPengguna + '/' + v.perPengguna + ' shared-users=' + v.sharedUsers + ' comment="Profil berbagi up-to"');
+    if (v.queue) {
+      L.push('/queue simple add name=' + q(v.profil + '-induk') + ' target=' + v.jaringan + ' max-limit=' + v.total + '/' + v.total + ' comment="Batas total bersama untuk jaringan hotspot"');
+    }
+    return H('Bandwidth Share Up-To untuk Hotspot') + L.join('\n') + '\n';
+  },
+  function (v) {
+    var perK = rateToK(v.perPengguna) || 0;
+    var n = parseInt(v.pengguna, 10) || 1;
+    return [
+      'Rate-limit di profil adalah batas per pengguna dengan pola up-to: tiap pengguna boleh mencapai ' + v.perPengguna + ' bila jalurnya sedang kosong, dan melambat sendiri bila jaringan ramai.',
+      'Puncak hitungannya ' + fmtK(perK * n) + ' untuk ' + n + ' pengguna, melawan total bersama ' + v.total + '. Bila puncaknya jauh di atas total, antrean induk yang menjaga agar total tidak terlampaui.',
+      'Shared-users ' + v.sharedUsers + ' berarti satu akun boleh dipakai ' + v.sharedUsers + ' perangkat sekaligus. Kecepatan akun itu tetap dibatasi rate-limit yang sama, jadi dua perangkat berbagi jatah yang sama.',
+      'Antrean induk hanya membatasi total jaringan hotspot. Bila dimatikan, tiap pengguna tetap dibatasi profilnya, tetapi total bersama tidak ada yang menjaga.'
+    ];
+  }));
+
+TOOLS.push(T('notify-expired', 'hotspot', 'Notifikasi Hotspot + PPPoE + IP Statis Kedaluwarsa', 'Notify Expired Hotspot + PPPoE + Static IP',
+  'Scheduler harian memeriksa pengguna hotspot yang masa pakainya habis, menonaktifkannya, lalu mengingatkan akun PPPoE dan IP statis yang kamu tandai kedaluwarsa.',
+  [
+    f('metode', 'Cara memberi kabar', 'select', 'log', { opts: [{ v: 'log', l: 'Catat ke log saja' }, { v: 'telegram', l: 'Kirim ringkasan ke Telegram' }] }),
+    f('token', 'Token bot Telegram', 'text', '', { mono: 1, opt: 1, help: 'Dapat dari @BotFather. Hanya dipakai bila cara di atas Telegram. Token ini rahasia.' }),
+    f('chat', 'Chat ID tujuan', 'text', '', { mono: 1, opt: 1, ph: '123456789', help: 'ID chat kamu atau grup tempat bot berada. Hanya dipakai bila cara di atas Telegram.' }),
+    f('jam', 'Jam pemeriksaan setiap hari', 'text', '06:00', { mono: 1, ph: '06:00', help: 'Format jam:menit.' })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/system script add name=cek-kedaluwarsa policy=read,write,policy,test source={');
+    L.push('  :local pesan "";');
+    L.push('  :foreach u in=[/ip hotspot user find where !disabled] do={');
+    L.push('    :local lim [/ip hotspot user get $u limit-uptime];');
+    L.push('    :local up [/ip hotspot user get $u uptime];');
+    L.push('    :if ([:len $lim] > 0 && $up >= $lim) do={');
+    L.push('      :local nama [/ip hotspot user get $u name];');
+    L.push('      /ip hotspot user disable $u;');
+    L.push('      :set pesan ($pesan . "Hotspot kedaluwarsa: " . $nama . "\\n");');
+    L.push('      :log warning ("Hotspot kedaluwarsa, dinonaktifkan: " . $nama);');
+    L.push('    }');
+    L.push('  }');
+    L.push('  :foreach s in=[/ppp secret find where comment~"exp:"] do={');
+    L.push('    :local nama [/ppp secret get $s name];');
+    L.push('    :set pesan ($pesan . "PPPoE ditandai kedaluwarsa, periksa manual: " . $nama . "\\n");');
+    L.push('    :log warning ("PPPoE ditandai kedaluwarsa, periksa manual: " . $nama);');
+    L.push('  }');
+    L.push('  :foreach l in=[/ip dhcp-server lease find where comment~"exp:"] do={');
+    L.push('    :local alamat [/ip dhcp-server lease get $l address];');
+    L.push('    :set pesan ($pesan . "IP statis ditandai kedaluwarsa: " . $alamat . "\\n");');
+    L.push('    :log warning ("Lease statis ditandai kedaluwarsa: " . $alamat);');
+    L.push('  }');
+    L.push('  :if ([:len $pesan] = 0) do={ :set pesan "Tidak ada yang kedaluwarsa hari ini." }');
+    if (v.metode === 'telegram') {
+      if (!v.token || !v.chat) {
+        L.push('  # ISI DULU token bot dan chat id di form: baris di bawah memakai placeholder dan pengiriman akan gagal sampai diganti.');
+        L.push('  :local token "TOKENBOT";');
+        L.push('  :local chatid "CHATID";');
+      } else {
+        L.push('  :local token "' + v.token + '";');
+        L.push('  :local chatid "' + v.chat + '";');
+      }
+      L.push('  :local encoded [:convert $pesan to=url];');
+      L.push('  /tool fetch url=("https://api.telegram.org/bot" . $token . "/sendMessage") http-method=post http-data=("chat_id=" . $chatid . "&text=" . $encoded) output=none;');
+    } else {
+      L.push('  :log info ("Ringkasan kedaluwarsa: " . $pesan);');
+    }
+    L.push('}');
+    L.push('/system scheduler add name=jadwal-cek-kedaluwarsa interval=1d start-time=' + v.jam + ':00 on-event="/system script run cek-kedaluwarsa" comment="Cek kedaluwarsa hotspot, PPPoE, IP statis"');
+    return H('Notifikasi Hotspot + PPPoE + IP Statis Kedaluwarsa') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Pengguna hotspot punya masa pakai bawaan (limit-uptime), jadi script bisa memeriksanya sendiri: bila uptime sudah mencapai limit, akun dinonaktifkan dan dicatat ke log.',
+      'Akun PPPoE dan lease IP statis tidak punya masa kedaluwarsa bawaan. Script hanya mengingatkan yang sudah kamu tandai sendiri dengan menulis exp: di kolom komentarnya, misalnya exp:2026-12-01, dan penonaktifannya tetap manual.',
+      'Pesan ringkasan dibangun dari semua temuan hari itu. Bila tidak ada yang kedaluwarsa, pesannya berbunyi tidak ada yang kedaluwarsa, supaya kamu tahu pemeriksaannya memang jalan.',
+      'Bila cara Telegram dipilih tetapi token atau chat id masih kosong, script memakai placeholder TOKENBOT dan CHATID dan pengirimannya akan gagal. Isi keduanya di form sebelum menjalankan script.',
+      'Scheduler menjalankan pemeriksaan sekali sehari pada jam yang kamu pilih. Router harus bisa mencapai internet agar pengiriman Telegram berhasil.'
+    ];
+  }));
+
+TOOLS.push(T('hotspot-qr-template', 'hotspot', 'Template QR Code Wi-Fi Hotspot Gratis', 'Free Hotspot Wi-Fi QR Code Template',
+  'Racik berkas login.html untuk hotspot yang menampilkan QR Wi-Fi: tamu memindai kode, langsung tersambung tanpa mengetik password.',
+  [
+    f('usaha', 'Nama usaha atau sekolah', 'text', 'WiFi Kopi Senja', {}),
+    f('tagline', 'Kalimat di bawah nama', 'text', 'Pindai kode di bawah untuk tersambung', {}),
+    f('ssid', 'Nama Wi-Fi (SSID)', 'text', 'Kopi-Senja', { mono: 1, help: 'Nama Wi-Fi yang muncul di HP tamu. Harus sama persis dengan SSID di access point.' }),
+    f('wifiPass', 'Password Wi-Fi (kosongkan bila jaringan terbuka)', 'text', 'kopisenja123', { mono: 1, opt: 1, help: 'Bila dikosongkan, QR dibuat untuk jaringan terbuka tanpa password.' }),
+    f('warna', 'Warna aksen', 'select', '#E8710A', { swatch: 1, opts: [{ v: '#E8710A', l: 'Oranye patch' }, { v: '#2F7D12', l: 'Hijau daun' }, { v: '#1D6FB8', l: 'Biru laut' }, { v: '#C0392B', l: 'Merah bata' }, { v: '#6C3FB5', l: 'Ungu anggur' }] }),
+    f('warnaCustom', 'Warna sendiri (kode hex, opsional)', 'text', '', { opt: 1, mono: 1, ph: '#0F766E', help: 'Bila diisi, warna ini mengalahkan pilihan di atas.' }),
+    f('gaya', 'Gaya halaman', 'select', 'gelap', { opts: [{ v: 'gelap', l: 'Gelap' }, { v: 'terang', l: 'Terang' }] })
+  ],
+  function () { return ''; },
+  function () {
+    return [
+      'Unduh hasilnya sebagai login.html, lalu unggah ke router lewat menu Files di Winbox ke folder hotspot (atau folder html yang dipakai profil hotspotmu), menimpa berkas login.html yang lama.',
+      'Kode QR digambar sebagai gambar SVG di dalam berkas HTML itu sendiri, jadi tidak butuh berkas tambahan di router dan tetap tampil walau router sedang luring.',
+      'Kode QR berisi nama Wi-Fi dan passwordnya dalam format WIFI, jadi HP yang memindainya langsung menawarkan sambungan tanpa mengetik apa pun. Itu juga berarti siapa pun yang memotret halaman ini bisa tersambung, jadi jangan pajang di tempat umum bila passwordnya bersifat privat.',
+      'Variabel MikroTik seperti $(link-login-only), $(error), dan $(chap-id) sengaja dipertahankan. Hotspot mengisinya sendiri saat halaman disajikan ke pengguna.',
+      'Blok CHAP menjaga password tidak terkirim sebagai teks biasa, sama seperti halaman bawaan MikroTik.'
+    ];
+  }, { kind: 'login' }));
 
 /* ================= Kategori: VPN ================= */
 
@@ -3847,6 +4581,9 @@ TOOLS.push(T('wizard-hotspot-sekolah', 'wizard', 'Wizard Paket Hotspot Sekolah',
 
 /* ================= Kategori: Template Login ================= */
 
+function escWifi(s) { return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/"/g, '\\"').replace(/:/g, '\\:'); }
+function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
 function loginHtml(v, preview) {
   var warna = v.warnaCustom && v.warnaCustom.trim() ? v.warnaCustom.trim() : v.warna;
   var gelap = v.gaya !== 'terang';
@@ -3864,6 +4601,33 @@ function loginHtml(v, preview) {
     onsubmit = '$(if chap-id) onsubmit="return doLogin()" $(endif)';
   }
   var trial = preview ? '' : '$(if trial == \'yes\')<p class="trial">Tamu? Coba akses terbatas: <a href="$(link-login-only)?dst=$(link-orig-esc)&amp;username=T-$(mac-esc)">masuk sebagai tamu</a></p>$(endif)';
+  var qrBlock = '';
+  if (v.ssid && String(v.ssid).trim()) {
+    var ssid = String(v.ssid).trim();
+    var pass = v.wifiPass ? String(v.wifiPass) : '';
+    var wifiStr = 'WIFI:T:' + (pass ? 'WPA' : 'nopass') + ';S:' + escWifi(ssid) + (pass ? ';P:' + escWifi(pass) : '') + ';;';
+    var qrSvg = '';
+    if (typeof qrcode === 'function') {
+      try {
+        var qr = qrcode(0, 'M');
+        qr.addData(wifiStr);
+        qr.make();
+        qrSvg = qr.createSvgTag({ cellSize: 4, margin: 8, scalable: true });
+      } catch (e) { qrSvg = ''; }
+    } else if (typeof window !== 'undefined' && window.addEventListener && typeof document !== 'undefined') {
+      // qrcode.js belum termuat saat halaman pertama dirender (app.js jalan
+      // sebelum tag script qrcode.js di index.html). Minta render ulang
+      // begitu halaman selesai dimuat, supaya pratinjau dan unduhan memakai
+      // QR sungguhan, bukan teks cadangan. Hanya jalan di muat pertama.
+      window.addEventListener('load', function () {
+        var el = document.getElementById('fld-ssid');
+        if (el) { el.dispatchEvent(new Event('input', { bubbles: true })); }
+      });
+    }
+    qrBlock = '<div class="qr"><p class="qr-judul">Pindai untuk tersambung Wi-Fi</p>' +
+      (qrSvg || '<p class="qr-teks">' + escHtml(wifiStr) + '</p>') +
+      '<p class="qr-ssid">SSID: ' + escHtml(ssid) + '</p></div>\n';
+  }
   return '<!DOCTYPE html>\n<html lang="id">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>Masuk, ' + v.usaha + '</title>\n<style>\n' +
     'body{margin:0;font-family:Arial,Helvetica,sans-serif;background:' + bg + ';color:' + teks + ';min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}\n' +
     '.kotak{background:' + panel + ';border-top:5px solid ' + warna + ';border-radius:10px;padding:28px 26px;max-width:360px;width:100%;box-sizing:border-box}\n' +
@@ -3875,6 +4639,11 @@ function loginHtml(v, preview) {
     '.error{background:#f9e7e4;color:#8f1d22;border-radius:6px;padding:10px 12px;font-size:13px;margin-bottom:12px}\n' +
     '.trial{font-size:13px;color:' + redup + ';text-align:center;margin:16px 0 0}\n' +
     '.trial a{color:' + warna + '}\n' +
+    '.qr{margin-top:20px;padding-top:16px;border-top:1px solid ' + redup + ';text-align:center}\n' +
+    '.qr-judul{font-size:13px;font-weight:bold;margin:0 0 10px}\n' +
+    '.qr svg{max-width:200px;width:100%;height:auto;display:block;margin:0 auto}\n' +
+    '.qr-teks{font-family:monospace;font-size:12px;word-break:break-all;margin:0 0 8px}\n' +
+    '.qr-ssid{font-size:13px;color:' + redup + ';margin:8px 0 0}\n' +
     '</style>\n</head>\n<body>\n' +
     chap +
     '<div class="kotak">\n<h1>' + v.usaha + '</h1>\n<p class="tagline">' + v.tagline + '</p>\n' +
@@ -3884,7 +4653,7 @@ function loginHtml(v, preview) {
     '<label for="username">Nama pengguna</label>\n<input id="username" name="username" type="text" value="' + userVal + '" autocomplete="username">\n' +
     '<label for="password">Kata sandi</label>\n<input id="password" name="password" type="password" autocomplete="current-password">\n' +
     '<button type="submit">Masuk</button>\n</form>\n' +
-    trial + '\n</div>\n</body>\n</html>\n';
+    qrBlock + trial + '\n</div>\n</body>\n</html>\n';
 }
 
 TOOLS.push(T('login-hotspot', 'template', 'Template Halaman Login Hotspot', 'Hotspot Login Page Template',
