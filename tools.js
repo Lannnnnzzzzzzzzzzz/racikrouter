@@ -1243,6 +1243,221 @@ TOOLS.push(T('port-knocking-icmp', 'dasar', 'Port Knocking dengan ICMP + Ukuran 
     ];
   }));
 
+TOOLS.push(T('rsc-beautifier', 'dasar', 'Perapi Kode RSC', 'MikroTik RSC Code Beautifier',
+  'Rapikan script .rsc yang berantakan: spasi dirapikan, baris kosong berlebih dibuang, dan indentasi blok diseragamkan.',
+  [
+    f('kode', 'Kode RSC yang dirapikan', 'textarea', '/ip address add address=192.168.88.1/24   interface=ether2\n\n\n/ip firewall filter add chain=input  action=accept comment="tes rapi"\n/interface bridge add name=bridge1\n/interface bridge port add bridge=bridge1 interface=ether3\n/interface bridge port add bridge=bridge1 interface=ether4\n:if (true) do={\n:put "selesai"\n}', { mono: 1, help: 'Tempel kode .rsc apa pun di sini. Isi di dalam tanda petik tidak diubah.' }),
+    f('indent', 'Indentasi blok', 'select', '2 spasi', { opts: ['2 spasi', '4 spasi', 'tab'] }),
+    f('rapikanSpasi', 'Rapikan spasi di sekitar tanda =', 'check', true, { help: 'Bila dicentang, a=1 menjadi a = 1 di luar tanda petik.' }),
+    f('buangKosong', 'Buang baris kosong berlebih', 'check', true, { help: 'Bila dicentang, baris kosong yang berurutan digabung menjadi satu.' })
+  ],
+  function (v) {
+    var indentStr = v.indent === 'tab' ? '\t' : (v.indent === '4 spasi' ? '    ' : '  ');
+    var mentah = String(v.kode || '');
+    if (!mentah.trim()) {
+      return H('Perapi Kode RSC') + '# Tempel kode RSC di kolom formulir, lalu hasil yang sudah rapi muncul di sini.\n';
+    }
+    function rapikanBaris(b) {
+      var hasil = ''; var dlm = false;
+      b = b.replace(/\t/g, ' ');
+      for (var j = 0; j < b.length; j++) {
+        var c = b.charAt(j);
+        if (c === '"') { dlm = !dlm; }
+        if (!dlm && c === ' ' && hasil.charAt(hasil.length - 1) === ' ') { continue; }
+        hasil += c;
+      }
+      return hasil;
+    }
+    function rapikanSamaDengan(b) {
+      var hasil = ''; var dlm = false;
+      for (var j = 0; j < b.length; j++) {
+        var c = b.charAt(j);
+        if (c === '"') { dlm = !dlm; hasil += c; continue; }
+        if (!dlm && c === '=') {
+          while (hasil.charAt(hasil.length - 1) === ' ') { hasil = hasil.slice(0, -1); }
+          hasil += ' = ';
+          while (b.charAt(j + 1) === ' ') { j++; }
+          continue;
+        }
+        hasil += c;
+      }
+      return hasil;
+    }
+    var baris = mentah.split(/\r?\n/);
+    var keluar = []; var dalam = 0; var kosong = 0; var dibuang = 0;
+    for (var i = 0; i < baris.length; i++) {
+      var b = rapikanBaris(baris[i]).replace(/^\s+|\s+$/g, '');
+      if (v.rapikanSpasi) { b = rapikanSamaDengan(b); }
+      if (b === '') {
+        kosong++;
+        if (v.buangKosong && kosong > 1) { dibuang++; continue; }
+        keluar.push('');
+        continue;
+      }
+      kosong = 0;
+      if (b.charAt(0) === '}' && dalam > 0) { dalam--; }
+      var inden = '';
+      for (var k = 0; k < dalam; k++) { inden += indentStr; }
+      keluar.push(inden + b);
+      if (b.charAt(b.length - 1) === '{') { dalam++; }
+    }
+    while (keluar.length && keluar[0] === '') { keluar.shift(); }
+    while (keluar.length && keluar[keluar.length - 1] === '') { keluar.pop(); }
+    return H('Perapi Kode RSC') +
+      '# Baris masuk: ' + baris.length + ', baris keluar: ' + keluar.length + ', baris kosong berlebih dibuang: ' + dibuang + '\n' +
+      '# Perapi ini hanya menata tampilan. Perintah, alamat, dan logika script tidak diubah.\n' +
+      keluar.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Perapi ini hanya menata tampilan: spasi, baris kosong, dan indentasi. Perintah, alamat IP, dan urutan baris tidak diubah, jadi hasil rapi tetap menjalankan hal yang sama.',
+      'Teks di dalam tanda petik tidak disentuh, supaya komentar dan nilai seperti comment="tes rapi" tetap persis seperti aslinya.',
+      'Baris yang diakhiri { menaikkan indentasi baris berikutnya, dan baris yang diawali } menurunkannya, mengikuti struktur blok script RouterOS.',
+      'Perapi ini tidak memeriksa apakah perintahnya valid, hanya tampilannya. Bila hasil rapi terasa aneh di satu baris, bandingkan dengan kode aslinya sebelum dijalankan.'
+    ];
+  }));
+
+TOOLS.push(T('traffic-monitor-telegram', 'dasar', 'Monitor Trafik + Kirim Telegram', 'MikroTik Trafik Monitor + Send Telegram',
+  'Pantau kecepatan satu interface tiap beberapa menit dan kirim peringatan Telegram bila unduh atau unggahnya melewati ambang.',
+  [
+    f('iface', 'Interface yang dipantau', 'text', 'ether1', { mono: 1 }),
+    f('ambang', 'Ambang peringatan (Mbps)', 'text', '80', { mono: 1, v: 'num', help: 'Bila unduh atau unggah melewati angka ini, bot mengirim peringatan.' }),
+    f('interval', 'Interval pemeriksaan (menit)', 'select', '5', { opts: ['1', '5', '10', '15', '30'] }),
+    f('token', 'Token bot Telegram', 'text', '', { mono: 1, opt: 1, help: 'Dapat dari @BotFather. Bila kosong, script memakai placeholder dan pengiriman gagal sampai diganti.' }),
+    f('chat', 'Chat ID tujuan', 'text', '', { mono: 1, opt: 1, ph: '123456789', help: 'ID chat kamu atau grup tempat bot berada.' })
+  ],
+  function (v) {
+    var ambang = parseFloat(v.ambang) || 80;
+    var token = v.token || 'TOKENBOT';
+    var chat = v.chat || 'CHATID';
+    var L = [];
+    L.push('/system script add name=monitor-trafik policy=read,write,test source={');
+    L.push('  :local info [/interface monitor-traffic ' + v.iface + ' once as-value];');
+    L.push('  :local rx (($info->"rx-bits-per-second") / 1000000);');
+    L.push('  :local tx (($info->"tx-bits-per-second") / 1000000);');
+    L.push('  :local token "' + token + '";');
+    L.push('  :local chatid "' + chat + '";');
+    L.push('  :if (($rx > ' + ambang + ') || ($tx > ' + ambang + ')) do={');
+    L.push('    :local pesan ("Trafik ' + v.iface + ' tembus ambang ' + ambang + ' Mbps: unduh " . $rx . " Mbps, unggah " . $tx . " Mbps");');
+    L.push('    /tool fetch url=("https://api.telegram.org/bot" . $token . "/sendMessage") http-method=post http-data=("chat_id=" . $chatid . "&text=" . [:convert $pesan to=url]) output=none;');
+    L.push('    :log warning $pesan;');
+    L.push('  }');
+    L.push('}');
+    L.push('/system scheduler add name=jadwal-monitor-trafik interval=' + v.interval + 'm start-time=startup on-event="/system script run monitor-trafik" comment="Monitor trafik ' + v.iface + ', ambang ' + ambang + ' Mbps"');
+    return H('Monitor Trafik + Kirim Telegram') + L.join('\n') + '\n';
+  },
+  function (v) {
+    return [
+      'Perintah monitor-traffic mengukur kecepatan sesaat interface ' + v.iface + ' dalam bit per detik, lalu script membaginya dengan satu juta agar satuannya Mbps seperti ambang yang kamu isi.',
+      'Peringatan hanya dikirim bila unduh ATAU unggah melewati ambang, jadi jaringan yang sedang santai tidak membanjiri Telegram.',
+      'Token dan chat id tertulis di dalam script, jadi siapa pun yang membaca script ini bisa mengirim pesan lewat bot itu. Jangan bagikan scriptnya.',
+      'Scheduler jalan tiap ' + v.interval + ' menit mulai dari router menyala. Bila router tidak bisa mencapai internet, pengiriman gagal dan hanya tercatat di log bila ambang terlampaui.'
+    ];
+  }));
+
+TOOLS.push(T('ntp-indonesia', 'dasar', 'Klien NTP/SNTP Zona Waktu Indonesia', 'Indonesia Time Zone NTP/SNTP Client',
+  'Atur zona waktu Indonesia dan sinkronkan jam router lewat server NTP atau SNTP, lengkap dengan server cadangan.',
+  [
+    f('zona', 'Zona waktu', 'select', 'Asia/Jakarta', { opts: ['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura'] }),
+    f('mode', 'Mode klien jam', 'select', 'NTP', { opts: ['NTP', 'SNTP'], help: 'NTP memakai klien jam modern RouterOS v7, SNTP memakai klien lama yang lebih ringan.' }),
+    f('utama', 'Server jam utama', 'select', 'id.pool.ntp.org', { opts: ['id.pool.ntp.org', '0.id.pool.ntp.org', 'time.google.com', 'pool.ntp.org'] }),
+    f('cadangan', 'Server jam cadangan', 'text', 'time.google.com', { mono: 1, help: 'Dipakai bila server utama tidak menjawab.' })
+  ],
+  function (v) {
+    var L = [];
+    L.push('/system clock set time-zone-name=' + v.zona);
+    if (v.mode === 'SNTP') {
+      L.push('/system sntp client set enabled=yes mode=unicast primary-server=' + v.utama + ' secondary-server=' + v.cadangan);
+      L.push('# Cek jam: /system sntp client print lalu /system clock print');
+    } else {
+      L.push('/system ntp client set enabled=yes');
+      L.push('/system ntp client servers add address=' + v.utama + ' comment="Server jam utama"');
+      L.push('/system ntp client servers add address=' + v.cadangan + ' comment="Server jam cadangan"');
+      L.push('# Cek jam: /system ntp client print lalu /system clock print');
+    }
+    return H('Klien NTP/SNTP Zona Waktu Indonesia') + L.join('\n') + '\n';
+  },
+  function (v) {
+    return [
+      'Zona waktu ' + v.zona + ' menentukan jam lokal router. Scheduler, log, dan voucher hotspot semuanya mengikuti jam ini, jadi jam yang meleset membuat jadwal ikut meleset.',
+      v.mode === 'SNTP' ? 'Mode SNTP memakai klien lama yang hanya bertanya ke dua server yang kamu isi. Cara ini ringan dan cukup untuk router kecil.' : 'Mode NTP memakai klien jam modern RouterOS v7 yang bisa menampung banyak server dan memilih sendiri mana yang paling akurat.',
+      'Server id.pool.ntp.org adalah kumpulan server jam Indonesia, sedangkan time.google.com adalah server jam Google. Keduanya gratis dan bisa dipakai siapa saja.',
+      'Bila jam router tetap salah setelah script jalan, periksa dulu apakah router bisa mencapai internet dan apakah firewall tidak memblokir port UDP 123.'
+    ];
+  }));
+
+TOOLS.push(T('log-debugger', 'dasar', 'Debugger Log MikroTik', 'AI Powered MikroTik Log Debugger',
+  'Tempel log router dan dapatkan analisis pola lokal: tiap jenis kejadian dihitung, baris bermasalah disorot, dan sarannya ditulis.',
+  [
+    f('log', 'Log yang dianalisis', 'textarea', '10:01:12 system,info router rebooted\n10:02:03 system,error login failure for user admin from 203.0.113.7 via ssh\n10:02:04 system,error login failure for user admin from 203.0.113.7 via ssh\n10:03:15 interface,info ether1 link down\n10:03:20 interface,info ether1 link up\n10:04:40 dhcp,warning DHCP pool 192.168.88.0/24 habis\n10:05:01 firewall,info drop input: in:ether1 proto TCP, 203.0.113.7:52311->192.168.88.1:8291', { mono: 1, help: 'Satu kejadian per baris. Salin dari menu Log Winbox atau hasil /log print.' }),
+    f('fokus', 'Fokus analisis', 'select', 'Semua kejadian', { opts: ['Semua kejadian', 'Hanya error dan peringatan', 'Hanya login dan keamanan'] })
+  ],
+  function (v) {
+    var baris = String(v.log || '').split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
+    var L = [];
+    L.push('Analisis log (pola lokal, bukan AI)');
+    L.push('');
+    if (!baris.length) {
+      L.push('Log masih kosong. Tempel log router di kolom formulir, lalu analisis muncul di sini.');
+      return L.join('\n') + '\n';
+    }
+    L.push('Total baris dibaca: ' + baris.length);
+    var pola = [
+      { nama: 'Login gagal', uji: /login failure|wrong password|login failed/i, saran: 'Banyak login gagal dari satu alamat berarti ada yang menebak kata sandi. Ganti port Winbox dan SSH dari angka bawaan, pakai kata sandi panjang, dan batasi akses manajemen hanya dari LAN.' },
+      { nama: 'Login berhasil', uji: /logged in/i, saran: '' },
+      { nama: 'Interface naik turun', uji: /link down|link up/i, saran: 'Link yang naik turun berulang biasanya kabel atau port yang longgar. Coba ganti kabel dan portnya, lalu pantau lagi.' },
+      { nama: 'DHCP', uji: /dhcp/i, saran: 'Peringatan DHCP pool habis berarti alamat IP sudah tidak cukup. Perbesar pool atau perpendek lease time.' },
+      { nama: 'Firewall drop', uji: /drop/i, saran: 'Drop dari internet adalah hal biasa: pemindai port selalu mencoba. Yang penting dicatat adalah bila drop itu berasal dari alamat LAN sendiri.' },
+      { nama: 'Reboot router', uji: /rebooted/i, saran: 'Reboot yang tidak direncanakan patut dicurigai: cek catu daya dan suhu router, lalu lihat baris log sebelum reboot.' },
+      { nama: 'Error lain', uji: /error/i, saran: '' },
+      { nama: 'Peringatan lain', uji: /warning/i, saran: '' }
+    ];
+    var hitung = []; var saran = []; var ipGagal = {};
+    pola.forEach(function (p) { hitung.push(0); });
+    baris.forEach(function (b) {
+      if (v.fokus === 'Hanya error dan peringatan' && !/error|warning/i.test(b)) { return; }
+      if (v.fokus === 'Hanya login dan keamanan' && !/login|logged in|drop/i.test(b)) { return; }
+      for (var i = 0; i < pola.length; i++) {
+        if (pola[i].uji.test(b)) {
+          hitung[i]++;
+          if (pola[i].nama === 'Login gagal') {
+            var m = b.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
+            if (m) { ipGagal[m[0]] = (ipGagal[m[0]] || 0) + 1; }
+          }
+          return;
+        }
+      }
+    });
+    var terhitung = 0;
+    pola.forEach(function (p, i) {
+      if (hitung[i] > 0) {
+        terhitung += hitung[i];
+        L.push(p.nama + ': ' + hitung[i] + ' baris');
+        if (p.saran) { saran.push(p.saran); }
+      }
+    });
+    if (terhitung === 0) { L.push('Tidak ada baris yang cocok dengan fokus ini.'); }
+    var ipTop = ''; var ipTopN = 0;
+    for (var ip in ipGagal) { if (ipGagal[ip] > ipTopN) { ipTop = ip; ipTopN = ipGagal[ip]; } }
+    if (ipTop) { L.push('Alamat sumber login gagal terbanyak: ' + ipTop + ' (' + ipTopN + ' kali)'); }
+    if (saran.length) {
+      L.push('');
+      L.push('Saran:');
+      saran.forEach(function (s) { L.push('- ' + s); });
+    }
+    L.push('');
+    L.push('Catatan: analisis ini memakai pencocokan kata kunci di browsermu. Log tidak dikirim ke mana pun dan tidak ada model AI yang membaca log ini.');
+    return L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Analisis ini memakai pencocokan pola kata kunci di browsermu, bukan model AI: tiap baris log dicocokkan ke daftar pola seperti login failure, link down, dan drop.',
+      'Baris yang cocok dengan lebih dari satu pola hanya dihitung sekali pada pola pertama, supaya total hitungan tetap sama dengan jumlah baris log.',
+      'Saran ditulis dari pola yang muncul, bukan dari isi lengkap log. Bila sarannya tidak cocok dengan keadaan routermu, abaikan dan baca baris aslinya.',
+      'Log tidak dikirim ke server mana pun karena analisis jalan sepenuhnya di browser.'
+    ];
+  }, { kind: 'calc' }));
+
 /* ================= Kategori: Routing ================= */
 
 TOOLS.push(T('static-route', 'routing', 'Rute Statis', 'Static Route',
@@ -1929,6 +2144,209 @@ TOOLS.push(T('port-static-routing', 'routing', 'Rute Statis Port TCP/UDP', 'Port
       'Perhatikan protokolnya: web dan unduhan umumnya TCP, sedangkan game dan panggilan suara umumnya UDP. Pilihan yang salah membuat aturan tidak pernah cocok.',
       'Trafik dengan port di luar daftar tidak tersentuh dan tetap memakai rute default biasa.',
       'Bila satu layanan memakai banyak port, daftarkan semuanya dipisah koma, atau buat dua tool terpisah untuk TCP dan UDP.'
+    ];
+  }));
+
+TOOLS.push(T('lb-pcc-calc', 'routing', 'Perhitungan LB PCC', 'LB PCC Calculation',
+  'Hitung pembagian beban tiap WAN untuk load balancing PCC, lalu hasilkan mangle dan rute yang memakai angka hitungan itu.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether5', { mono: 1 }),
+    f('jumlah', 'Jumlah WAN', 'select', '2', { opts: ['2', '3', '4', '5'] }),
+    f('klas', 'Klasifikasi koneksi', 'select', 'both-addresses-and-ports', { opts: ['both-addresses-and-ports', 'both-addresses', 'src-address', 'src-address-and-port', 'dst-address-and-port'] }),
+    f('w1', 'Interface WAN 1', 'text', 'ether1', { mono: 1 }),
+    f('g1', 'Gateway WAN 1', 'ip', '192.168.1.1', { v: 'ip' }),
+    f('w2', 'Interface WAN 2', 'text', 'ether2', { mono: 1 }),
+    f('g2', 'Gateway WAN 2', 'ip', '192.168.2.1', { v: 'ip' }),
+    f('w3', 'Interface WAN 3', 'text', 'ether3', { mono: 1, help: 'Hanya dipakai bila jumlah WAN 3 atau lebih.' }),
+    f('g3', 'Gateway WAN 3', 'ip', '192.168.3.1', { v: 'ip' }),
+    f('w4', 'Interface WAN 4', 'text', 'ether4', { mono: 1, help: 'Hanya dipakai bila jumlah WAN 4 atau lebih.' }),
+    f('g4', 'Gateway WAN 4', 'ip', '192.168.4.1', { v: 'ip' }),
+    f('w5', 'Interface WAN 5', 'text', 'ether5', { mono: 1, help: 'Hanya dipakai bila jumlah WAN 5.' }),
+    f('g5', 'Gateway WAN 5', 'ip', '192.168.5.1', { v: 'ip' }),
+    f('total', 'Total bandwidth gabungan (Mbps)', 'text', '20', { mono: 1, v: 'num', help: 'Jumlah kecepatan semua WAN. Dipakai menghitung jatah tiap jalur.' })
+  ],
+  function (v) {
+    var n = parseInt(v.jumlah, 10) || 2;
+    var wans = [
+      { iface: v.w1, gw: v.g1 },
+      { iface: v.w2, gw: v.g2 },
+      { iface: v.w3, gw: v.g3 },
+      { iface: v.w4, gw: v.g4 },
+      { iface: v.w5, gw: v.g5 }
+    ].slice(0, n);
+    var total = parseFloat(v.total) || 20;
+    var per = Math.round((total / n) * 10) / 10;
+    var sisa = n > 1 ? Math.round((total / (n - 1)) * 10) / 10 : total;
+    var L = [];
+    L.push('# Hitungan PCC: total ' + total + ' Mbps dibagi ' + n + ' jalur.');
+    wans.forEach(function (w, i) {
+      L.push('#   WAN' + (i + 1) + ' (' + w.iface + ' via ' + w.gw + '): sekitar ' + per + ' Mbps bila koneksi tersebar merata');
+    });
+    if (n > 1) {
+      L.push('# Bila satu WAN mati, koneksi baru tersebar ke ' + (n - 1) + ' jalur tersisa, tiap jalur menanggung sekitar ' + sisa + ' Mbps');
+    }
+    L.push('# PCC membagi KONEKSI, bukan paket: satu unduhan besar tetap lewat satu jalur.');
+    L.push('# Tabel routing khusus untuk tiap WAN');
+    wans.forEach(function (w, i) { L.push('/routing table add name=to-wan' + (i + 1) + ' fib'); });
+    L.push('# Tandai koneksi yang masuk dari tiap WAN agar jawabannya pulang lewat jalur yang sama');
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=input in-interface=' + w.iface + ' action=mark-connection new-connection-mark=wan' + (i + 1) + '-conn passthrough=yes');
+    });
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=output connection-mark=wan' + (i + 1) + '-conn action=mark-routing new-routing-mark=to-wan' + (i + 1) + ' passthrough=no');
+    });
+    L.push('# Bagi koneksi baru dari LAN dengan PCC');
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' dst-address-type=!local per-connection-classifier=' + v.klas + ':' + n + '/' + i + ' action=mark-connection new-connection-mark=wan' + (i + 1) + '-conn passthrough=yes');
+    });
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' connection-mark=wan' + (i + 1) + '-conn action=mark-routing new-routing-mark=to-wan' + (i + 1) + ' passthrough=no');
+    });
+    L.push('# Rute untuk tiap tabel dan rute default utama');
+    wans.forEach(function (w, i) {
+      L.push('/ip route add gateway=' + w.gw + ' routing-table=to-wan' + (i + 1) + ' check-gateway=ping comment="Rute tabel WAN' + (i + 1) + '"');
+      L.push('/ip route add gateway=' + w.gw + ' distance=' + (i + 1) + ' check-gateway=ping comment="Default utama WAN' + (i + 1) + '"');
+    });
+    L.push('# NAT keluar untuk semua WAN');
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall nat add chain=srcnat out-interface=' + w.iface + ' action=masquerade comment="NAT WAN' + (i + 1) + '"');
+    });
+    return H('Perhitungan LB PCC') + L.join('\n') + '\n';
+  },
+  function (v) {
+    var n = parseInt(v.jumlah, 10) || 2;
+    return [
+      'PCC menghash alamat dan port koneksi, lalu hasilnya dibagi rata ke ' + n + ' WAN. Satu koneksi selalu lewat satu jalur, jadi sesi login dan perbankan tidak putus.',
+      'Angka jatah tiap WAN di atas mengasumsikan koneksi tersebar merata. Bila satu pelanggan mengunduh besar sendirian, jalurnya bisa penuh sementara jalur lain menganggur, karena PCC membagi koneksi, bukan bandwidth.',
+      'Tanda koneksi dari arah input memastikan jawaban dari internet pulang lewat WAN tempat koneksi itu lahir.',
+      'Setiap WAN punya tabel routing sendiri (to-wan1, to-wan2, dan seterusnya) sesuai cara RouterOS v7 memisahkan rute bertanda.'
+    ];
+  }));
+
+TOOLS.push(T('lb-nth-calc', 'routing', 'Perhitungan LB NTH', 'LB NTH Calculation',
+  'Hitung pembagian beban tiap WAN untuk load balancing NTH, lalu hasilkan mangle hitungan dan rute yang memakai angka itu.',
+  [
+    f('lan', 'Interface LAN', 'text', 'ether5', { mono: 1 }),
+    f('jumlah', 'Jumlah WAN', 'select', '2', { opts: ['2', '3', '4', '5'] }),
+    f('w1', 'Interface WAN 1', 'text', 'ether1', { mono: 1 }),
+    f('g1', 'Gateway WAN 1', 'ip', '192.168.1.1', { v: 'ip' }),
+    f('w2', 'Interface WAN 2', 'text', 'ether2', { mono: 1 }),
+    f('g2', 'Gateway WAN 2', 'ip', '192.168.2.1', { v: 'ip' }),
+    f('w3', 'Interface WAN 3', 'text', 'ether3', { mono: 1, help: 'Hanya dipakai bila jumlah WAN 3 atau lebih.' }),
+    f('g3', 'Gateway WAN 3', 'ip', '192.168.3.1', { v: 'ip' }),
+    f('w4', 'Interface WAN 4', 'text', 'ether4', { mono: 1, help: 'Hanya dipakai bila jumlah WAN 4 atau lebih.' }),
+    f('g4', 'Gateway WAN 4', 'ip', '192.168.4.1', { v: 'ip' }),
+    f('w5', 'Interface WAN 5', 'text', 'ether5', { mono: 1, help: 'Hanya dipakai bila jumlah WAN 5.' }),
+    f('g5', 'Gateway WAN 5', 'ip', '192.168.5.1', { v: 'ip' }),
+    f('total', 'Total bandwidth gabungan (Mbps)', 'text', '20', { mono: 1, v: 'num', help: 'Jumlah kecepatan semua WAN. Dipakai menghitung jatah tiap jalur.' })
+  ],
+  function (v) {
+    var n = parseInt(v.jumlah, 10) || 2;
+    var wans = [
+      { iface: v.w1, gw: v.g1 },
+      { iface: v.w2, gw: v.g2 },
+      { iface: v.w3, gw: v.g3 },
+      { iface: v.w4, gw: v.g4 },
+      { iface: v.w5, gw: v.g5 }
+    ].slice(0, n);
+    var total = parseFloat(v.total) || 20;
+    var per = Math.round((total / n) * 10) / 10;
+    var sisa = n > 1 ? Math.round((total / (n - 1)) * 10) / 10 : total;
+    var L = [];
+    L.push('# Hitungan NTH: total ' + total + ' Mbps dibagi ' + n + ' jalur.');
+    wans.forEach(function (w, i) {
+      L.push('#   WAN' + (i + 1) + ' (' + w.iface + ' via ' + w.gw + '): sekitar ' + per + ' Mbps bila koneksi tersebar merata');
+    });
+    if (n > 1) {
+      L.push('# Bila satu WAN mati, hitungan NTH tetap membagi ke ' + n + ' slot, jadi satu dari ' + n + ' koneksi baru akan gagal dan dicoba ulang ke jalur lain. Periksa dan sesuaikan jumlah WAN bila satu jalur mati lama.');
+    }
+    L.push('# Tabel routing khusus untuk tiap WAN');
+    wans.forEach(function (w, i) { L.push('/routing table add name=to-wan' + (i + 1) + ' fib'); });
+    L.push('# Tandai koneksi masuk dari tiap WAN agar jawaban pulang lewat jalur asal');
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=input in-interface=' + w.iface + ' action=mark-connection new-connection-mark=wan' + (i + 1) + '-conn passthrough=yes');
+    });
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=output connection-mark=wan' + (i + 1) + '-conn action=mark-routing new-routing-mark=to-wan' + (i + 1) + ' passthrough=no');
+    });
+    L.push('# Bagi koneksi baru dari LAN dengan NTH: hitungan ke-1 ke WAN 1, ke-2 ke WAN 2, dan seterusnya, lalu berulang');
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' dst-address-type=!local connection-mark=no-mark nth=' + n + ',' + (i + 1) + ' action=mark-connection new-connection-mark=wan' + (i + 1) + '-conn passthrough=yes');
+    });
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' connection-mark=wan' + (i + 1) + '-conn action=mark-routing new-routing-mark=to-wan' + (i + 1) + ' passthrough=no');
+    });
+    L.push('# Rute untuk tiap tabel dan rute default cadangan');
+    wans.forEach(function (w, i) {
+      L.push('/ip route add gateway=' + w.gw + ' routing-table=to-wan' + (i + 1) + ' check-gateway=ping comment="Rute tabel WAN' + (i + 1) + '"');
+    });
+    L.push('/ip route add gateway=' + wans.map(function (w) { return w.gw; }).join(',') + ' check-gateway=ping distance=1 comment="Default cadangan ECMP"');
+    L.push('# NAT keluar untuk semua WAN');
+    wans.forEach(function (w, i) {
+      L.push('/ip firewall nat add chain=srcnat out-interface=' + w.iface + ' action=masquerade comment="NAT WAN' + (i + 1) + '"');
+    });
+    return H('Perhitungan LB NTH') + L.join('\n') + '\n';
+  },
+  function (v) {
+    var n = parseInt(v.jumlah, 10) || 2;
+    return [
+      'NTH adalah penghitung: koneksi baru ke-1 dihitung ke WAN 1, ke-2 ke WAN 2, sampai ke-' + n + ', lalu berulang. Karena aturan ini hanya menyentuh koneksi yang belum bertanda, satu koneksi tetap lewat satu jalur sampai selesai.',
+      'Angka jatah tiap WAN di atas mengasumsikan koneksi baru datang merata. NTH membagi berdasarkan urutan hitungan, bukan karakteristik koneksi, jadi untuk beban yang tidak merata PCC biasanya membagi lebih adil.',
+      'Kelemahan NTH dibanding PCC: bila satu WAN mati, slot hitungannya tetap ada, sehingga sebagian koneksi baru diarahkan ke jalur mati dan harus dicoba ulang.',
+      'Rute default ECMP di akhir hanya pengaman untuk trafik yang tidak bertanda. Trafik bertanda tetap memakai tabel routingnya sendiri.'
+    ];
+  }));
+
+TOOLS.push(T('lb-ecmp-calc', 'routing', 'Perhitungan LB ECMP', 'LB ECMP Calculation',
+  'Hitung pembagian beban berdasar bobot tiap gateway untuk load balancing ECMP, lalu hasilkan rute ECMP yang memakai bobot itu.',
+  [
+    f('g1', 'Gateway WAN 1', 'ip', '192.168.1.1', { v: 'ip' }),
+    f('b1', 'Bobot gateway 1', 'number', 1, { v: 'num', min: 1, max: 10, help: 'Bobot 2 berarti jalur ini menerima dua kali lipat dibanding bobot 1.' }),
+    f('g2', 'Gateway WAN 2', 'ip', '192.168.2.1', { v: 'ip' }),
+    f('b2', 'Bobot gateway 2', 'number', 1, { v: 'num', min: 1, max: 10 }),
+    f('g3', 'Gateway WAN 3', 'ip', '', { opt: 1, help: 'Kosongkan bila hanya memakai 2 gateway.' }),
+    f('b3', 'Bobot gateway 3', 'number', 1, { v: 'num', min: 1, max: 10 }),
+    f('g4', 'Gateway WAN 4', 'ip', '', { opt: 1, help: 'Kosongkan bila hanya memakai 2 atau 3 gateway.' }),
+    f('b4', 'Bobot gateway 4', 'number', 1, { v: 'num', min: 1, max: 10 }),
+    f('total', 'Total bandwidth gabungan (Mbps)', 'text', '20', { mono: 1, v: 'num', help: 'Jumlah kecepatan semua WAN. Dipakai menghitung jatah tiap gateway.' })
+  ],
+  function (v) {
+    var daftar = [
+      { gw: v.g1, bobot: v.b1 },
+      { gw: v.g2, bobot: v.b2 },
+      { gw: v.g3, bobot: v.b3 },
+      { gw: v.g4, bobot: v.b4 }
+    ];
+    var gws = [];
+    daftar.forEach(function (d) {
+      if (String(d.gw || '').trim()) { gws.push({ gw: String(d.gw).trim(), bobot: parseInt(d.bobot, 10) || 1 }); }
+    });
+    if (!gws.length) { gws.push({ gw: '192.168.1.1', bobot: 1 }); }
+    var total = parseFloat(v.total) || 20;
+    var sumBobot = 0;
+    gws.forEach(function (g) { sumBobot += g.bobot; });
+    var L = [];
+    L.push('# Hitungan ECMP: total ' + total + ' Mbps dibagi berdasar bobot (total bobot ' + sumBobot + ').');
+    gws.forEach(function (g, i) {
+      var jatah = Math.round((total * g.bobot / sumBobot) * 10) / 10;
+      var persen = Math.round((g.bobot / sumBobot) * 100);
+      L.push('#   Gateway ' + (i + 1) + ' (' + g.gw + ', bobot ' + g.bobot + '): sekitar ' + jatah + ' Mbps (' + persen + ' persen)');
+    });
+    var daftarGw = [];
+    gws.forEach(function (g) {
+      for (var i = 0; i < g.bobot; i++) { daftarGw.push(g.gw); }
+    });
+    L.push('# Bobot diwujudkan dengan menulis gateway yang sama berulang kali di daftar gateway: gateway berbobot 2 muncul dua kali, jadi menerima dua kali lipat koneksi baru.');
+    L.push('/ip route add dst-address=0.0.0.0/0 gateway=' + daftarGw.join(',') + ' check-gateway=ping comment="ECMP ' + gws.length + ' gateway, bobot total ' + sumBobot + '"');
+    L.push('# Tambahkan masquerade untuk tiap WAN bila belum ada.');
+    return H('Perhitungan LB ECMP') + L.join('\n') + '\n';
+  },
+  function (v) {
+    return [
+      'ECMP menaruh beberapa gateway dalam satu rute. RouterOS membagi koneksi baru ke gateway-gateway itu secara bergiliran.',
+      'Bobot diwujudkan dengan mengulang gateway di daftar rute: gateway berbobot 2 ditulis dua kali, sehingga peluang koneksi baru jatuh ke jalur itu dua kali lipat dibanding gateway berbobot 1.',
+      'Pembagian ini tetap per koneksi, bukan per paket, dan hanya perkiraan: koneksi yang besar dan panjang bisa membuat satu jalur tampak lebih penuh dari hitungan.',
+      'Opsi check-gateway=ping membuat gateway yang tidak menjawab ping dikeluarkan dari rute sampai hidup lagi.'
     ];
   }));
 
@@ -2834,6 +3252,51 @@ TOOLS.push(T('block-sharing-hotspot-ttl', 'firewall', 'Blokir Berbagi Hotspot (U
     ];
   }));
 
+TOOLS.push(T('mangle-obfuscator', 'firewall', 'Obfuscator Chain Mangle', 'Mangle Chain Obfuscator / Encryption',
+  'Samarkan nama chain mangle menjadi kode acak agar tujuan tiap rantai tidak langsung terbaca dari daftar rule.',
+  [
+    f('rantai', 'Nama chain asli (pisah koma)', 'text', 'game,streaming,prioritas', { mono: 1, help: 'Satu nama per rantai, pisah dengan koma. Nama asli hanya muncul di komentar pemetaan di atas script.' }),
+    f('prefix', 'Awalan kode samaran', 'text', 'mx', { mono: 1, help: 'Awalan nama samaran, contoh mx. Nama akhir dibuat dari awalan ini ditambah kode hash.' }),
+    f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
+    f('jump', 'Buatkan jump rule dari prerouting', 'check', true, { help: 'Bila dicentang, dibuat aturan lompat dari chain prerouting ke tiap chain samaran.' })
+  ],
+  function (v) {
+    var daftar = String(v.rantai || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (!daftar.length) { daftar = ['game']; }
+    var L = [];
+    L.push('# Pemetaan nama (simpan baik-baik: nama samaran tidak menjelaskan tujuannya).');
+    var samaran = [];
+    daftar.forEach(function (nama, i) {
+      var h = 0;
+      for (var j = 0; j < nama.length; j++) { h = ((h * 31) + nama.charCodeAt(j)) >>> 0; }
+      var kode = v.prefix + '-' + h.toString(16);
+      samaran.push({ asli: nama, kode: kode });
+      L.push('#   ' + nama + ' -> ' + kode);
+    });
+    L.push('# Ini penyamaran nama, BUKAN enkripsi: siapa pun yang membaca script ini tetap bisa mengikuti alurnya.');
+    if (v.jump) {
+      L.push('# Lompat dari prerouting ke tiap chain samaran');
+      samaran.forEach(function (s, i) {
+        L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' action=jump jump-target=' + s.kode + ' comment="Lompat ke rantai samaran ' + (i + 1) + '"');
+      });
+    } else {
+      L.push('# Tanpa jump rule: tambahkan sendiri aturan lompat ke chain samaran di atas, atau centang opsi jump di form.');
+    }
+    L.push('# Contoh isi tiap chain samaran (ganti dengan aturanmu sendiri)');
+    samaran.forEach(function (s, i) {
+      L.push('/ip firewall mangle add chain=' + s.kode + ' action=mark-connection new-connection-mark=c' + (i + 1) + ' passthrough=yes comment="Tandai koneksi di rantai samaran ' + (i + 1) + '"');
+    });
+    return H('Obfuscator Chain Mangle') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Chain di mangle adalah nama rantai aturan. Nama seperti game atau streaming langsung memberi tahu tujuan rantai itu, sedangkan kode seperti mx-8f2a1c tidak memberi petunjuk apa pun.',
+      'Ini penyamaran nama, bukan enkripsi. Aturan di dalam chain tetap terbaca, dan siapa pun yang membaca script lengkap bisa mengikuti alurnya. Gunanya hanya membuat daftar rule tidak langsung terbaca sekilas.',
+      'Pemetaan nama asli ke kode samaran hanya ada di komentar atas script. Simpan pemetaan itu, karena setelah script dijalankan, Winbox hanya menampilkan kode samarannya.',
+      'Jump rule harus berada sebelum aturan lain yang memakai hasil penandaan, karena paket yang melompat ke chain samaran harus kembali dulu sebelum aturan berikutnya dibaca.'
+    ];
+  }));
+
 /* ================= Kategori: Queue ================= */
 
 TOOLS.push(T('simple-queue', 'queue', 'Simple Queue per Target', 'Simple Queue per Target',
@@ -3219,6 +3682,164 @@ TOOLS.push(T('pcq-queue-tree-simple', 'queue', 'PCQ untuk Queue Tree dan Simple 
       'Bila PCQ dipakai di keduanya sekaligus untuk target yang sama, trafik dibatasi dua kali. Pilih satu mode saja untuk satu target, atau bedakan targetnya.'
     ];
   }));
+
+TOOLS.push(T('burst-limit-simulator', 'queue', 'Simulator Burst Limit', 'MikroTik Burst Limit Simulator',
+  'Simulasikan kapan burst menyala dan padam dari max-limit, burst-limit, threshold, dan burst-time yang kamu isi.',
+  [
+    f('maxLimit', 'Max-limit (Mbps)', 'text', '10', { mono: 1, v: 'num', help: 'Kecepatan normal setelah burst padam.' }),
+    f('burstLimit', 'Burst-limit (Mbps)', 'text', '20', { mono: 1, v: 'num', help: 'Lonjakan singkat di atas max-limit.' }),
+    f('threshold', 'Burst-threshold (Mbps)', 'text', '7', { mono: 1, v: 'num', help: 'Selama rata-rata pemakaian di bawah nilai ini, burst diizinkan.' }),
+    f('burstTime', 'Burst-time (detik)', 'number', 8, { v: 'num', min: 1, max: 60, help: 'Jendela hitung rata-rata pemakaian.' }),
+    f('durasi', 'Durasi simulasi (detik)', 'number', 30, { v: 'num', min: 5, max: 120 })
+  ],
+  function (v) {
+    function pad(n) { return (n < 10 ? ' ' : '') + n; }
+    var m = parseFloat(v.maxLimit) || 10;
+    var b = parseFloat(v.burstLimit) || 20;
+    var t = parseFloat(v.threshold) || 7;
+    var w = parseInt(v.burstTime, 10) || 8;
+    var dur = parseInt(v.durasi, 10) || 30;
+    var L = [];
+    L.push('Simulasi burst limit');
+    L.push('');
+    L.push('Masukan: max-limit ' + m + ' Mbps, burst-limit ' + b + ' Mbps, threshold ' + t + ' Mbps, burst-time ' + w + ' detik');
+    if (t >= b) {
+      L.push('Catatan: threshold (' + t + ' Mbps) sama atau di atas burst-limit, jadi rata-rata tidak pernah menyentuh threshold dan burst tidak pernah padam.');
+    }
+    if (t <= m) {
+      L.push('Catatan: threshold (' + t + ' Mbps) sama atau di bawah max-limit, jadi setelah burst padam rata-rata sulit turun di bawah threshold dan burst sulit menyala lagi.');
+    }
+    L.push('');
+    L.push('Detik | Kecepatan | Rata-rata | Status');
+    var riwayat = []; var burst = true; var detikBurst = 0; var detikNormal = 0; var jumlahKecepatan = 0; var pertamaPadam = 0;
+    for (var s = 1; s <= dur; s++) {
+      var kec = burst ? b : m;
+      riwayat.push(kec);
+      if (riwayat.length > w) { riwayat.shift(); }
+      var jumlah = 0;
+      for (var i = 0; i < riwayat.length; i++) { jumlah += riwayat[i]; }
+      var rata = jumlah / riwayat.length;
+      jumlahKecepatan += kec;
+      if (burst) { detikBurst++; } else { detikNormal++; }
+      L.push(pad(s) + ' | ' + kec + ' Mbps | ' + rata.toFixed(2) + ' Mbps | ' + (burst ? 'BURST' : 'normal'));
+      if (burst && rata >= t && pertamaPadam === 0) { pertamaPadam = s; }
+      if (burst && rata >= t) { burst = false; } else if (!burst && rata < t) { burst = true; }
+    }
+    L.push('');
+    L.push('Ringkasan:');
+    L.push('Burst pertama padam pada detik ' + (pertamaPadam ? pertamaPadam : 'tidak pernah selama simulasi') + '.');
+    L.push('Total detik burst: ' + detikBurst + ' dari ' + dur + ' detik (' + Math.round(detikBurst / dur * 100) + ' persen).');
+    L.push('Total detik normal: ' + detikNormal + ' dari ' + dur + ' detik.');
+    L.push('Kecepatan rata-rata selama simulasi: ' + (jumlahKecepatan / dur).toFixed(2) + ' Mbps.');
+    L.push('Model ini memakai rata-rata jendela geser ' + w + ' detik, sama seperti cara burst-time bekerja di RouterOS. Angka pastinya bisa berbeda sedikit karena RouterOS menghitung rata-rata per paket, bukan per detik.');
+    return L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Burst-time adalah jendela hitung rata-rata, bukan timer yang mematikan burst setelah sekian detik. Burst padam saat rata-rata pemakaian di jendela itu menyentuh threshold.',
+      'Simulasi menghitung per detik dengan model jendela geser. RouterOS menghitung per paket, jadi detik padam sebenarnya bisa bergeser sedikit.',
+      'Bila threshold di atas burst-limit, burst tidak pernah padam. Bila threshold di bawah max-limit, burst hampir tidak pernah menyala lagi setelah padam.',
+      'Kecepatan rata-rata jangka panjang mendekati threshold bila pemakaian terus penuh, karena burst hanya mengizinkan lonjakan sementara.'
+    ];
+  }, { kind: 'calc' }));
+
+TOOLS.push(T('token-bucket-calc', 'queue', 'Kalkulator Token Bucket', 'MikroTik Token Bucket Calculator',
+  'Hitung ukuran ember token, lama isi ulang, dan lama burst penuh dari parameter burst sebuah queue.',
+  [
+    f('maxLimit', 'Max-limit (Mbps)', 'text', '10', { mono: 1, v: 'num', help: 'Kecepatan normal setelah burst padam.' }),
+    f('burstLimit', 'Burst-limit (Mbps)', 'text', '20', { mono: 1, v: 'num', help: 'Lonjakan singkat di atas max-limit.' }),
+    f('threshold', 'Burst-threshold (Mbps)', 'text', '7', { mono: 1, v: 'num', help: 'Laju token terkumpul, sama dengan rata-rata pemakaian yang masih mengizinkan burst.' }),
+    f('burstTime', 'Burst-time (detik)', 'number', 8, { v: 'num', min: 1, max: 60, help: 'Jendela hitung rata-rata pemakaian.' })
+  ],
+  function (v) {
+    var m = parseFloat(v.maxLimit) || 10;
+    var b = parseFloat(v.burstLimit) || 20;
+    var t = parseFloat(v.threshold) || 7;
+    var w = parseInt(v.burstTime, 10) || 8;
+    var L = [];
+    L.push('Kalkulator token bucket');
+    L.push('');
+    L.push('Masukan: max-limit ' + m + ' Mbps, burst-limit ' + b + ' Mbps, threshold ' + t + ' Mbps, burst-time ' + w + ' detik');
+    L.push('');
+    if (b <= m) {
+      L.push('Periksa masukan: burst-limit harus lebih besar dari max-limit, kalau tidak tidak ada lonjakan yang bisa dihitung.');
+      return L.join('\n') + '\n';
+    }
+    if (t <= 0) {
+      L.push('Periksa masukan: burst-threshold harus lebih besar dari nol.');
+      return L.join('\n') + '\n';
+    }
+    var ember = (b - t) * w;
+    var isiPenuh = ember / t;
+    var lamaBurst = ember / (b - m);
+    var emberKB = Math.round(ember * 125);
+    L.push('Laju isi token   : ' + t + ' Mbps (token terkumpul secepat burst-threshold)');
+    L.push('Ukuran ember     : ' + ember.toFixed(1) + ' Mbit (sekitar ' + emberKB + ' KB)');
+    L.push('Waktu isi penuh  : ' + isiPenuh.toFixed(1) + ' detik dari ember kosong');
+    L.push('Lama burst penuh : ' + lamaBurst.toFixed(1) + ' detik dari ember penuh sampai habis');
+    L.push('Siklus           : burst ' + lamaBurst.toFixed(1) + ' detik, lalu isi ulang ' + isiPenuh.toFixed(1) + ' detik');
+    L.push('Rata-rata jangka panjang: sekitar ' + t + ' Mbps bila pemakaian terus penuh');
+    L.push('');
+    L.push('Rumus: ember = (burst-limit - threshold) x burst-time; isi penuh = ember / threshold; lama burst = ember / (burst-limit - max-limit).');
+    L.push('Perkiraan ini memakai model token bucket klasik. RouterOS tidak menampilkan ukuran ember secara langsung, jadi angka ini dipakai untuk membandingkan setelan, bukan sebagai ukuran yang dijamin.');
+    return L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Token bucket adalah gambaran cara kerja burst: token terkumpul pelan dengan laju threshold, lalu dipakai sekaligus untuk lonjakan sampai burst-limit.',
+      'Ukuran ember menentukan berapa lama lonjakan bisa bertahan: makin besar selisih burst-limit dan threshold, makin besar embernya.',
+      'Setelah ember habis, kecepatan kembali ke max-limit sampai token terkumpul lagi. Siklus ini yang membuat burst terasa sesaat, bukan permanen.',
+      'Angka ini model perkiraan untuk membandingkan setelan. Nilai pastinya di RouterOS tidak ditampilkan, jadi pakai hasil ini untuk memilih angka, bukan sebagai janji.'
+    ];
+  }, { kind: 'calc' }));
+
+TOOLS.push(T('queue-load-simulator', 'queue', 'Simulator Beban Queue', 'MikroTik Queue Load Simulator',
+  'Simulasikan beban antrean dari total bandwidth, jumlah klien, dan kebutuhan tiap klien, lalu lihat apakah antreanmu kelebihan beban.',
+  [
+    f('total', 'Total bandwidth (Mbps)', 'text', '50', { mono: 1, v: 'num' }),
+    f('klien', 'Jumlah klien', 'number', 10, { v: 'num', min: 1, max: 500 }),
+    f('demand', 'Kebutuhan tiap klien (Mbps)', 'text', '8', { mono: 1, v: 'num', help: 'Kebutuhan puncak tiap klien bila mengunduh penuh.' }),
+    f('sibuk', 'Klien aktif bersamaan di jam sibuk (persen)', 'number', 60, { v: 'num', min: 10, max: 100, help: 'Jarang semua klien mengunduh penuh bersamaan. Nilai 60 persen adalah perkiraan jam sibuk yang umum.' })
+  ],
+  function (v) {
+    var total = parseFloat(v.total) || 50;
+    var klien = parseInt(v.klien, 10) || 10;
+    var demand = parseFloat(v.demand) || 8;
+    var sibuk = parseInt(v.sibuk, 10) || 60;
+    var L = [];
+    L.push('Simulasi beban queue');
+    L.push('');
+    L.push('Masukan: total ' + total + ' Mbps, ' + klien + ' klien, kebutuhan tiap klien ' + demand + ' Mbps, ' + sibuk + ' persen aktif di jam sibuk');
+    var butuhPuncak = klien * demand;
+    var butuhSibuk = butuhPuncak * sibuk / 100;
+    var util = butuhSibuk / total * 100;
+    var adil = total / klien;
+    var buang = butuhSibuk > total ? (butuhSibuk - total) / butuhSibuk * 100 : 0;
+    L.push('Kebutuhan bila semua klien penuh: ' + butuhPuncak + ' Mbps');
+    L.push('Kebutuhan di jam sibuk (' + sibuk + ' persen aktif): ' + butuhSibuk.toFixed(1) + ' Mbps');
+    L.push('Utilisasi di jam sibuk: ' + util.toFixed(1) + ' persen dari total ' + total + ' Mbps');
+    L.push('Jatah adil per klien: ' + adil.toFixed(2) + ' Mbps');
+    L.push('Perkiraan paket terbuang di jam sibuk: ' + buang.toFixed(1) + ' persen');
+    var verdict = util < 70 ? 'AMAN' : (util <= 100 ? 'MEPEPET' : 'KELEBIHAN BEBAN');
+    L.push('Penilaian: ' + verdict);
+    if (util < 70) {
+      L.push('Saran: total masih longgar. Jatah per klien bisa dinaikkan sampai ' + adil.toFixed(1) + ' Mbps tanpa antrean menumpuk.');
+    } else if (util <= 100) {
+      L.push('Saran: antrean mulai penuh di jam sibuk. Turunkan max-limit tiap klien mendekati ' + adil.toFixed(1) + ' Mbps atau siapkan bandwidth tambahan.');
+    } else {
+      L.push('Saran: kebutuhan jam sibuk melebihi total. Turunkan max-limit tiap klien ke ' + adil.toFixed(1) + ' Mbps, aktifkan PCQ agar jatah terbagi rata, atau tambah bandwidth.');
+    }
+    L.push('Angka buang di atas adalah perkiraan model: bila kebutuhan melebihi total, kelebihan itu tidak bisa dikirim dan antrean membuangnya.');
+    return L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Utilisasi dihitung dari perkiraan klien aktif di jam sibuk, bukan dari semua klien sekaligus, karena jarang semua klien mengunduh penuh bersamaan.',
+      'Jatah adil adalah total dibagi jumlah klien. Angka ini patokan max-limit tiap klien bila semua klien harus mendapat bagian yang sama.',
+      'Bila kebutuhan melebihi total, antrean tidak bisa mengarang bandwidth: kelebihan paket menunggu lalu dibuang, dan itulah yang dirasakan sebagai lambat.',
+      'Simulasi ini memakai angka yang kamu isi. Untuk angka nyata, ukur pemakaian puncak dari menu Torch atau grafik interface di jam sibuk.'
+    ];
+  }, { kind: 'calc' }));
 
 /* ================= Kategori: Hotspot dan PPP ================= */
 
@@ -4320,6 +4941,39 @@ TOOLS.push(T('capsman-cap', 'wireless', 'CAP untuk Sisi Access Point', 'CAP for 
     ];
   }));
 
+TOOLS.push(T('wifi-id-auto-login', 'wireless', 'Auto Login Wifi.id WMS dan Seamless', 'Wifi.id WMS and Seamless Auto Login',
+  'Jadwalkan router untuk mengecek internet dan login otomatis ke portal Wifi.id, WMS, atau Seamless bila koneksi sempat putus.',
+  [
+    f('ssid', 'Nama SSID Wifi.id / WMS', 'text', 'wifi.id', { mono: 1, help: 'SSID yang dipakai router sebagai client, contoh wifi.id atau WMS.' }),
+    f('user', 'Username Wifi.id', 'text', 'nama@wifi.id', { mono: 1 }),
+    f('pass', 'Password Wifi.id', 'text', '', { mono: 1, opt: 1, help: 'Kata sandi tersimpan di script scheduler ini. Jangan bagikan scriptnya ke orang lain.' }),
+    f('interval', 'Interval pemeriksaan (menit)', 'select', '5', { opts: ['1', '5', '10', '15'] }),
+    f('uji', 'Alamat uji koneksi (ping)', 'ip', '8.8.8.8', { v: 'ip' })
+  ],
+  function (v) {
+    var pw = v.pass || 'PASSWORD';
+    var L = [];
+    L.push('# Prasyarat: interface wireless router sudah tersambung ke SSID ' + v.ssid + ' sebagai client.');
+    L.push('# Portal login Wifi.id bisa berubah alamatnya. Bila login gagal, buka portal dari browser dan samakan alamat auth di baris fetch bawah.');
+    L.push('/system script add name=auto-login-wifiid policy=read,write,test source={');
+    L.push('  :local balas [/ping ' + v.uji + ' count=2];');
+    L.push('  :if ($balas = 0) do={');
+    L.push('    /tool fetch url="https://welcome2.wifi.id/wifi.id/auth.php" http-method=post http-data="username=' + v.user + '&password=' + pw + '" keep-result=no;');
+    L.push('    :log info "Auto login Wifi.id dijalankan: ping ke ' + v.uji + ' tidak dibalas";');
+    L.push('  }');
+    L.push('}');
+    L.push('/system scheduler add name=jadwal-auto-login-wifiid interval=' + v.interval + 'm start-time=startup on-event="/system script run auto-login-wifiid" comment="Auto login ' + v.ssid + ' bila internet putus"');
+    return H('Auto Login Wifi.id WMS dan Seamless') + L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Script memeriksa internet dengan ping dua kali ke alamat uji. Bila tidak ada balasan sama sekali, barulah login portal dijalankan, jadi login tidak diulang selama internet masih hidup.',
+      'Login memakai endpoint portal welcome2.wifi.id yang dipakai Wifi.id, WMS, dan Seamless. Alamat ini bisa berubah bila pengelola portal memperbarui halamannya, jadi samakan dengan alamat yang terlihat saat login manual.',
+      'Kata sandi tertulis langsung di script scheduler, jadi siapa pun yang bisa membaca script ini bisa memakai akunmu. Jangan bagikan scriptnya dan ganti kata sandi bila script pernah tersebar.',
+      'Prasyaratnya adalah router sudah tersambung ke SSID sebagai wireless client. Tool ini hanya menangani login portalnya, bukan sambungan radionya.'
+    ];
+  }));
+
 /* ================= Kategori: Container ================= */
 
 TOOLS.push(T('container-adguard', 'container', 'AdGuard Home di Container', 'AdGuard Home in a Container',
@@ -4470,6 +5124,177 @@ TOOLS.push(T('kalkulator-pool', 'kalkulator', 'Kalkulator Pool DHCP', 'DHCP Pool
       'Pola yang dipakai adalah pola lapangan yang umum: alamat pertama untuk router, beberapa alamat berikutnya dicadangkan untuk perangkat tetap, sisanya dibagikan DHCP.',
       'Perangkat statis sengaja ditaruh di luar pool agar DHCP tidak pernah memberikan alamat yang sama ke perangkat lain.',
       'Bila isi pool negatif atau sangat kecil, jaringanmu terlalu sempit untuk jumlah cadangan itu. Kecilkan cadangan atau lebarkan prefix.'
+    ];
+  }, { kind: 'calc' }));
+
+TOOLS.push(T('isp-bandwidth-calc', 'kalkulator', 'Kalkulator Bandwidth ISP / RT RW Net', 'ISP / RTRW-Net Bandwidth Calculator',
+  'Hitung jatah adil tiap pelanggan dari bandwidth ISP, jumlah pelanggan, dan perkiraan pemakaian jam sibuk.',
+  [
+    f('isp', 'Bandwidth dari ISP (Mbps)', 'text', '100', { mono: 1, v: 'num' }),
+    f('overhead', 'Overhead protokol (persen)', 'number', 10, { v: 'num', min: 0, max: 30, help: 'Bagian bandwidth yang habis untuk header dan pengulangan paket. Nilai 10 persen adalah perkiraan umum.' }),
+    f('pelanggan', 'Jumlah pelanggan', 'number', 20, { v: 'num', min: 1, max: 1000 }),
+    f('paket', 'Paket jualan per pelanggan (Mbps)', 'text', '10', { mono: 1, v: 'num' }),
+    f('sibuk', 'Pelanggan aktif bersamaan di jam sibuk (persen)', 'number', 60, { v: 'num', min: 10, max: 100, help: 'Jarang semua pelanggan mengunduh penuh bersamaan. Nilai 60 persen adalah perkiraan jam sibuk yang umum.' })
+  ],
+  function (v) {
+    var isp = parseFloat(v.isp) || 100;
+    var overhead = parseInt(v.overhead, 10) || 0;
+    var pelanggan = parseInt(v.pelanggan, 10) || 20;
+    var paket = parseFloat(v.paket) || 10;
+    var sibuk = parseInt(v.sibuk, 10) || 60;
+    var L = [];
+    L.push('Kalkulator bandwidth ISP / RT RW Net');
+    L.push('');
+    L.push('Masukan: ISP ' + isp + ' Mbps, overhead ' + overhead + ' persen, ' + pelanggan + ' pelanggan, paket ' + paket + ' Mbps, ' + sibuk + ' persen aktif di jam sibuk');
+    var usable = isp * (1 - overhead / 100);
+    var butuhPuncak = pelanggan * paket;
+    var butuhSibuk = butuhPuncak * sibuk / 100;
+    var rasio = butuhSibuk / usable;
+    var adil = usable / pelanggan;
+    var rekom = Math.min(paket, Math.floor(adil * 10) / 10);
+    L.push('Bandwidth bisa dipakai: ' + usable.toFixed(1) + ' Mbps (setelah overhead ' + overhead + ' persen)');
+    L.push('Kebutuhan bila semua pelanggan penuh: ' + butuhPuncak + ' Mbps');
+    L.push('Kebutuhan di jam sibuk (' + sibuk + ' persen aktif): ' + butuhSibuk.toFixed(1) + ' Mbps');
+    L.push('Rasio oversubscription di jam sibuk: 1 banding ' + rasio.toFixed(2));
+    L.push('Jatah adil per pelanggan: ' + adil.toFixed(2) + ' Mbps');
+    L.push('Max-limit yang disarankan per pelanggan: ' + rekom + ' Mbps');
+    var status = rasio <= 1 ? 'CUKUP' : (rasio <= 1.5 ? 'MEPEPET' : 'KELEBIHAN BEBAN');
+    L.push('Penilaian: ' + status);
+    if (rasio <= 1) {
+      L.push('Saran: bandwidth cukup untuk jam sibuk. Pelanggan bisa diberi max-limit penuh ' + paket + ' Mbps.');
+    } else if (rasio <= 1.5) {
+      L.push('Saran: jam sibuk mulai mepet. Jual paket ' + paket + ' Mbps tetap bisa, tetapi pasang max-limit ' + rekom + ' Mbps per pelanggan agar antrean tidak menumpuk.');
+    } else {
+      L.push('Saran: kebutuhan jam sibuk jauh di atas bandwidth. Turunkan max-limit per pelanggan ke ' + rekom + ' Mbps, batasi pelanggan baru, atau tambah bandwidth ISP.');
+    }
+    L.push('Oversubscription adalah praktik wajar RT RW Net: paket yang dijual boleh melebihi bandwidth ISP karena tidak semua pelanggan penuh bersamaan. Rasio 1 banding 1,5 masih wajar, di atas itu keluhan lambat mulai terasa.');
+    return L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Overhead adalah bagian bandwidth yang habis untuk header paket dan pengulangan. Dari 100 Mbps ISP, yang sampai ke pelanggan biasanya sekitar 90 Mbps.',
+      'Kebutuhan jam sibuk dihitung dari perkiraan pelanggan aktif bersamaan, bukan dari semua pelanggan, karena jarang semua pelanggan mengunduh penuh di saat yang sama.',
+      'Jatah adil adalah bandwidth bisa dipakai dibagi jumlah pelanggan. Bila paket jualan di atas jatah adil, max-limit per pelanggan sebaiknya mengikuti jatah adil agar antrean tetap sehat.',
+      'Rasio oversubscription di atas 1 banding 1,5 berarti keluhan lambat di jam sibuk mulai terasa. Saat itu tambah bandwidth atau batasi pelanggan baru.'
+    ];
+  }, { kind: 'calc' }));
+
+TOOLS.push(T('antenna-height-calc', 'kalkulator', 'Kalkulator Tinggi Antena', 'Antenna Height Calculator',
+  'Hitung zona Fresnel dan tinggi antena minimum agar jalur radio point to point bebas halangan.',
+  [
+    f('jarak', 'Jarak antar titik (km)', 'text', '5', { mono: 1, v: 'num' }),
+    f('frek', 'Frekuensi (GHz)', 'text', '5.8', { mono: 1, v: 'num', help: 'Contoh 2.4 atau 5.8 untuk WiFi, 5.8 paling umum untuk link point to point.' }),
+    f('halangan', 'Tinggi halangan di tengah jalur (m)', 'text', '10', { mono: 1, v: 'num', help: 'Tinggi bangunan atau pohon tertinggi yang dilewati jalur.' }),
+    f('d1', 'Jarak halangan dari titik A (km)', 'text', '2.5', { mono: 1, v: 'num', help: 'Jarak dari antena A ke halangan, harus lebih kecil dari jarak total.' }),
+    f('ha', 'Tinggi antena A (m)', 'text', '15', { mono: 1, v: 'num' }),
+    f('hb', 'Tinggi antena B (m)', 'text', '15', { mono: 1, v: 'num' })
+  ],
+  function (v) {
+    function b2(x) { return Math.round(x * 100) / 100; }
+    var jarak = parseFloat(v.jarak) || 5;
+    var frek = parseFloat(v.frek) || 5.8;
+    var hal = parseFloat(v.halangan) || 0;
+    var d1 = parseFloat(v.d1) || 2.5;
+    var ha = parseFloat(v.ha) || 15;
+    var hb = parseFloat(v.hb) || 15;
+    var L = [];
+    L.push('Kalkulator tinggi antena');
+    L.push('');
+    L.push('Masukan: jarak ' + jarak + ' km, frekuensi ' + frek + ' GHz, halangan ' + hal + ' m pada ' + d1 + ' km dari titik A, antena A ' + ha + ' m, antena B ' + hb + ' m');
+    if (d1 >= jarak || frek <= 0 || jarak <= 0) {
+      L.push('Periksa masukan: jarak halangan harus lebih kecil dari jarak total, dan frekuensi serta jarak harus lebih besar dari nol.');
+      return L.join('\n') + '\n';
+    }
+    var d2 = jarak - d1;
+    var r = 17.32 * Math.sqrt((d1 * d2) / (frek * jarak));
+    var r60 = 0.6 * r;
+    var bulge = (d1 * d2) / (12.74 * (4 / 3));
+    var hLos = ha + (hb - ha) * (d1 / jarak);
+    var clearance = hLos - hal - bulge;
+    var perlu = hal + r60 + bulge;
+    var lolos = clearance >= r60;
+    L.push('Jari-jari zona Fresnel di titik halangan: ' + b2(r) + ' m');
+    L.push('Zona Fresnel yang harus bebas (60 persen): ' + b2(r60) + ' m');
+    L.push('Tonjolan lengkung bumi di titik halangan: ' + b2(bulge) + ' m');
+    L.push('Tinggi garis pandang di titik halangan: ' + b2(hLos) + ' m');
+    L.push('Ruang bebas di atas halangan: ' + b2(clearance) + ' m (butuh ' + b2(r60) + ' m)');
+    L.push('Tinggi garis pandang minimum di titik halangan: ' + b2(perlu) + ' m');
+    if (lolos) {
+      L.push('Penilaian: LOLOS. Ruang bebas ' + b2(clearance) + ' m sudah melewati 60 persen zona Fresnel.');
+    } else {
+      var minHa = (perlu - hb * (d1 / jarak)) / (1 - d1 / jarak);
+      L.push('Penilaian: TERHALANG. Ruang bebas hanya ' + b2(clearance) + ' m, kurang ' + b2(r60 - clearance) + ' m dari syarat 60 persen zona Fresnel.');
+      L.push('Saran: naikkan antena A minimal ke ' + b2(minHa) + ' m (dengan antena B tetap ' + hb + ' m), atau naikkan kedua antena sampai ruang bebas mencapai ' + b2(r60) + ' m.');
+    }
+    L.push('Rumus: jari-jari Fresnel = 17,32 x akar(d1 x d2 / (frekuensi x jarak)); tonjolan bumi memakai faktor K 4/3.');
+    return L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Zona Fresnel adalah lorong berbentuk cerutu di sekitar garis pandang. Sinyal butuh lorong ini bebas, dan aturan praktisnya adalah 60 persen jari-jarinya harus bersih dari halangan.',
+      'Tonjolan lengkung bumi dihitung dengan faktor K 4/3, yaitu cara radio memperkirakan pembiasan atmosfer. Makin jauh jaraknya, makin besar tonjolannya.',
+      'Tinggi garis pandang di titik halangan dihitung dengan interpolasi lurus antara kedua antena. Bila halangan tidak di tengah, hasilnya mengikuti posisi halangan itu.',
+      'Hitungan ini memakai peta dan angka yang kamu isi. Pohon bisa tumbuh dan bangunan baru bisa muncul, jadi sisakan ruang lebih saat memasang antena.'
+    ];
+  }, { kind: 'calc' }));
+
+TOOLS.push(T('ftth-optical-calc', 'kalkulator', 'Kalkulator Sinyal Optik FTTH', 'FTTH Optical Signal / Fiber Optik (FO) Calculator',
+  'Hitung anggaran daya link serat optik dari OLT sampai ONT: redaman splitter, konektor, sambungan, dan serat.',
+  [
+    f('tx', 'Daya kirim OLT (dBm)', 'text', '3', { mono: 1, v: 'num', help: 'Daya kirim port PON OLT, umumnya 2 sampai 7 dBm. Lihat lembar data OLT.' }),
+    f('splitter', 'Rasio splitter', 'select', '1:16', { opts: ['1:4', '1:8', '1:16', '1:32', '1:64'] }),
+    f('panjang', 'Panjang serat (km)', 'text', '2', { mono: 1, v: 'num' }),
+    f('konektor', 'Jumlah konektor', 'number', 4, { v: 'num', min: 0, max: 20, help: 'Termasuk konektor di ODF dan di rumah pelanggan.' }),
+    f('splice', 'Jumlah sambungan (splice)', 'number', 2, { v: 'num', min: 0, max: 20 }),
+    f('sens', 'Sensitivitas ONT (dBm)', 'text', '-27', { mono: 1, v: 'num', help: 'Batas terendah daya terima ONT, umumnya -27 dBm untuk GPON.' }),
+    f('margin', 'Margin keamanan (dB)', 'number', 3, { v: 'num', min: 0, max: 10, help: 'Cadangan untuk penuaan serat dan sambungan baru di kemudian hari.' })
+  ],
+  function (v) {
+    var tx = parseFloat(v.tx) || 0;
+    var panjang = parseFloat(v.panjang) || 0;
+    var konektor = parseInt(v.konektor, 10) || 0;
+    var splice = parseInt(v.splice, 10) || 0;
+    var sens = parseFloat(v.sens);
+    if (isNaN(sens)) { sens = -27; }
+    var margin = parseInt(v.margin, 10) || 0;
+    var splitLoss = { '1:4': 7.0, '1:8': 10.5, '1:16': 13.5, '1:32': 17.0, '1:64': 20.5 };
+    var rugiSplitter = splitLoss[v.splitter] || 13.5;
+    var rugiSerat = panjang * 0.35;
+    var rugiKonektor = konektor * 0.3;
+    var rugiSplice = splice * 0.1;
+    var total = rugiSplitter + rugiSerat + rugiKonektor + rugiSplice;
+    var rx = tx - total;
+    var batas = sens + margin;
+    var sisa = rx - sens;
+    var L = [];
+    L.push('Kalkulator sinyal optik FTTH');
+    L.push('');
+    L.push('Masukan: OLT ' + tx + ' dBm, splitter ' + v.splitter + ', serat ' + panjang + ' km, ' + konektor + ' konektor, ' + splice + ' splice, sensitivitas ONT ' + sens + ' dBm, margin ' + margin + ' dB');
+    L.push('Redaman splitter ' + v.splitter + ' : ' + rugiSplitter.toFixed(1) + ' dB');
+    L.push('Redaman serat (' + panjang + ' km x 0,35 dB/km): ' + rugiSerat.toFixed(2) + ' dB');
+    L.push('Redaman konektor (' + konektor + ' x 0,3 dB): ' + rugiKonektor.toFixed(1) + ' dB');
+    L.push('Redaman splice (' + splice + ' x 0,1 dB): ' + rugiSplice.toFixed(1) + ' dB');
+    L.push('Total redaman: ' + total.toFixed(2) + ' dB');
+    L.push('Daya terima di ONT: ' + rx.toFixed(2) + ' dBm');
+    L.push('Batas terima ONT: ' + sens + ' dBm (ditambah margin ' + margin + ' dB menjadi ' + batas.toFixed(1) + ' dBm)');
+    L.push('Sisa margin terhadap batas ONT: ' + sisa.toFixed(2) + ' dB');
+    if (rx >= batas) {
+      L.push('Penilaian: LOLOS. Daya terima ' + rx.toFixed(2) + ' dBm masih di atas batas aman ' + batas.toFixed(1) + ' dBm.');
+    } else if (rx >= sens) {
+      L.push('Penilaian: MEPEPET. Daya terima ' + rx.toFixed(2) + ' dBm masih di atas batas ONT, tetapi sudah di bawah batas aman dengan margin. Kurangi satu tingkat splitter atau perpendek serat bila bisa.');
+    } else {
+      L.push('Penilaian: GAGAL. Daya terima ' + rx.toFixed(2) + ' dBm di bawah batas ONT ' + sens + ' dBm, ONT tidak akan tersambung stabil.');
+      L.push('Saran: turunkan rasio splitter satu tingkat, perpendek jalur serat, atau kurangi jumlah konektor dan splice.');
+    }
+    L.push('Nilai redaman di atas adalah nilai umum: splitter sesuai tabel pabrikan, serat 0,35 dB/km, konektor 0,3 dB, splice 0,1 dB. Ukur dengan OTDR bila angka pastinya penting.');
+    return L.join('\n') + '\n';
+  },
+  function () {
+    return [
+      'Anggaran daya adalah pengurangan sederhana: daya kirim OLT dikurangi semua redaman di jalan, hasilnya harus tetap di atas sensitivitas ONT.',
+      'Splitter adalah penyumbang redaman terbesar. Naik satu tingkat rasio, misalnya dari 1:16 ke 1:32, menambah redaman sekitar 3,5 dB.',
+      'Margin keamanan adalah cadangan untuk penuaan serat dan sambungan baru. Link yang lolos tanpa margin bisa gagal beberapa tahun kemudian saat konektor mulai kotor.',
+      'Nilai redaman di atas adalah nilai umum dari lembar data. Bila angka pastinya penting, ukur jalur dengan OTDR dan bandingkan dengan hitungan ini.'
     ];
   }, { kind: 'calc' }));
 
