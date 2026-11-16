@@ -4302,7 +4302,7 @@ TOOLS.push(T('remove-all-hotspot', 'hotspot', 'Remove All Hotspot', 'Remove All 
     var L = [];
     if (v.cadangan) { L.push('/export file=backup-sebelum-hapus-hotspot'); }
     if (v.server) { L.push('/ip hotspot remove [find]'); }
-    if (v.user) { L.push('/ip hotspot user remove [find]'); }
+    if (v.user) { L.push('/ip hotspot user remove [find where name!="default-trial"]'); }
     if (v.profil) { L.push('/ip hotspot user profile remove [find where name!="default"]'); }
     if (v.binding) { L.push('/ip hotspot ip-binding remove [find]'); }
     if (v.cookie) { L.push('/ip hotspot cookie remove [find]'); }
