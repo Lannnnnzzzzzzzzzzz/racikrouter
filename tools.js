@@ -42,6 +42,7 @@ function T(id, cat, nId, nEn, desc, fields, template, explain, extra) {
   return t;
 }
 function q(s) { return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'; }
+function qRe(s) { return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$$/, function () { return '\\$'; }) + '"'; }
 function ipPart(cidr) { return String(cidr).split('/')[0]; }
 function prefixPart(cidr) { var p = String(cidr).split('/')[1]; return p ? p : '24'; }
 function ipToNum(ip) { var a = String(ip).split('.').map(Number); return ((a[0] * 256 + a[1]) * 256 + a[2]) * 256 + a[3]; }
@@ -2074,8 +2075,8 @@ TOOLS.push(T('lb-nth', 'routing', 'Load Balancing NTH', 'Load Balancing NTH',
     ];
   }));
 
-TOOLS.push(T('game-raw-routing', 'routing', 'Rute Game via Raw Filter', 'Games Static Routing Using Filter Raw',
-  'Arahkan trafik ke server game lewat satu gateway khusus. Penandaan dilakukan di tabel raw, sebelum connection tracking.',
+TOOLS.push(T('game-raw-routing', 'routing', 'Rute Game via Mangle Address List', 'Games Static Routing Using Mangle Address List',
+  'Arahkan trafik ke server game lewat satu gateway khusus. Penandaan koneksi dilakukan di mangle prerouting berdasarkan daftar alamat server game.',
   [
     f('lan', 'Interface LAN', 'text', 'ether2', { mono: 1 }),
     f('ips', 'Alamat server game (IP atau CIDR)', 'textarea', '103.86.211.0/24\n45.112.90.0/24', { mono: 1, help: 'Satu alamat IP atau CIDR per baris. Ganti dengan alamat server game yang kamu pakai, lihat dokumentasi game itu.' }),
@@ -2086,8 +2087,8 @@ TOOLS.push(T('game-raw-routing', 'routing', 'Rute Game via Raw Filter', 'Games S
     var ips = String(v.ips).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
     var L = [];
     ips.forEach(function (a) { L.push('/ip firewall address-list add list=server-game address=' + a + ' comment="Server game"'); });
-    L.push('# Tabel raw memproses paket sebelum connection tracking, jadi penandaan terjadi paling awal');
-    L.push('/ip firewall raw add chain=prerouting in-interface=' + v.lan + ' dst-address-list=server-game action=mark-connection new-connection-mark=game-conn passthrough=yes comment="Tandai koneksi game di raw"');
+    L.push('# Penandaan koneksi hanya bisa di mangle: tabel raw berjalan sebelum connection tracking, jadi raw tidak bisa menandai koneksi');
+    L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' dst-address-list=server-game action=mark-connection new-connection-mark=game-conn passthrough=yes comment="Tandai koneksi game"');
     L.push('/ip firewall mangle add chain=prerouting in-interface=' + v.lan + ' connection-mark=game-conn action=mark-routing new-routing-mark=ke-game passthrough=no comment="Arahkan game ke gateway khusus"');
     L.push('/routing table add name=ke-game fib');
     L.push('/ip route add gateway=' + v.gw + ' routing-table=ke-game check-gateway=ping comment="Rute game lewat WAN khusus"');
@@ -2096,7 +2097,7 @@ TOOLS.push(T('game-raw-routing', 'routing', 'Rute Game via Raw Filter', 'Games S
   },
   function () {
     return [
-      'Tabel raw adalah gerbang pertama firewall: paket ditandai di sini sebelum connection tracking mencatatnya, jadi beban CPU untuk koneksi game berkurang.',
+      'Penandaan koneksi sengaja ditaruh di mangle prerouting, titik paling awal yang sudah mengenal koneksi. Tabel raw berjalan sebelum connection tracking sehingga secara teknis tidak bisa menandai koneksi, karena itu tool ini tidak memakai raw.',
       'Daftar server game harus berisi alamat IP asli server game itu. Alamat ini berbeda tiap game dan tiap region, jadi periksa dokumentasi atau pantau koneksi game dengan Torch bila ragu.',
       'Trafik selain ke server game tidak tersentuh aturan ini dan tetap memakai rute default biasa.',
       'NAT di akhir wajib ada karena gateway khusus game adalah jalur keluar yang berbeda dari WAN utama.'
@@ -2495,6 +2496,7 @@ TOOLS.push(T('blokir-situs', 'firewall', 'Blokir Situs', 'Block Websites',
     f('paksa', 'Paksa semua klien memakai DNS router (alihkan port 53)', 'check', true, { help: 'Tanpa ini, klien yang mengatur DNS sendiri (misalnya 8.8.8.8 di HP) lolos dari lapis DNS. Lapis TLS host di bawah tetap menahan HTTPS mereka.' }),
     f('tls', 'Lapis HTTPS: buang koneksi TLS ke domain ini (port 443)', 'check', true),
     f('quic', 'Tutup QUIC/HTTP3 (UDP port 443) agar browser tidak mengelak lewat UDP', 'check', true),
+    f('doh', 'Tutup DNS terenkripsi (DoH/DoT) agar browser tidak mengelak dari DNS router', 'check', true, { help: 'Browser modern memakai DNS terenkripsi ke server publik (Google, Cloudflare, Quad9) sehingga tidak pernah bertanya ke DNS router. Lapis ini membuang koneksi ke server DNS publik yang dikenal dan port DoT 853, sehingga browser jatuh kembali ke DNS biasa yang bisa disaring router.' }),
     f('iplist', 'Lapis IP: address list domain + buang paket ke IP-nya', 'check', false, { help: 'Lapisan tambahan. Situs di balik CDN berbagi IP dengan situs lain, jadi lapis ini bisa ikut memblokir situs yang tidak bersalah.' }),
     f('kata', 'Kata kunci di URL (opsional)', 'text', '', { opt: 1, ph: 'judi', help: 'Bila diisi, dibuat juga penyaring Layer 7 yang menangkap kata ini di dalam alamat dan isi permintaan HTTP.' }),
     f('komen', 'Komentar aturan', 'text', 'Situs diblokir', { opt: 1 })
@@ -2533,13 +2535,22 @@ TOOLS.push(T('blokir-situs', 'firewall', 'Blokir Situs', 'Block Websites',
       L.push('# Lapis 3: tutup QUIC/HTTP3 (UDP 443) untuk semua tujuan, browser jatuh kembali ke TCP dan tertangkap lapis 2');
       L.push('/ip firewall filter add chain=forward protocol=udp dst-port=443 action=drop comment="Blokir QUIC"');
     }
+    if (v.doh) {
+      L.push('# Lapis 4: tutup DNS terenkripsi (DoH di port 443 ke server DNS publik, DoT di port 853)');
+      L.push('# Browser yang gagal memakai DoH akan jatuh kembali ke DNS biasa dan tertangkap lapis 1');
+      var dohIps = ['8.8.8.8', '8.8.4.4', '1.1.1.1', '1.0.0.1', '1.1.1.2', '1.0.0.2', '9.9.9.9', '149.112.112.112', '9.9.9.11', '149.112.112.11', '208.67.222.222', '208.67.220.220', '94.140.14.14', '94.140.15.15', '185.228.168.9', '185.228.169.9', '76.76.2.0', '76.76.10.0', '8.26.56.26', '8.20.247.20', '84.200.69.80', '84.200.70.40', '4.2.2.1', '4.2.2.2'];
+      dohIps.forEach(function (ip) { L.push('/ip firewall address-list add list=server-doh address=' + ip + ' comment="Server DNS publik (DoH)"'); });
+      L.push('/ip firewall filter add chain=forward protocol=tcp dst-port=443 dst-address-list=server-doh action=drop comment="Blokir DoH"');
+      L.push('/ip firewall filter add chain=forward protocol=tcp dst-port=853 action=drop comment="Blokir DoT"');
+      L.push('/ip firewall filter add chain=forward protocol=udp dst-port=853 action=drop comment="Blokir DoT"');
+    }
     if (v.iplist) {
       L.push('# Lapis tambahan: address list berisi IP hasil terjemahan domain, paket ke sana dibuang');
       lines.forEach(function (d) { L.push('/ip firewall address-list add list=situs-diblokir address=' + d + ' comment=' + q(komen)); });
       L.push('/ip firewall filter add chain=forward dst-address-list=situs-diblokir action=drop comment=' + q(komen));
     }
     if (v.kata) {
-      L.push('/ip firewall layer7-protocol add name=blokir-kata regexp=' + q('^.+(' + v.kata + ').*$'));
+      L.push('/ip firewall layer7-protocol add name=blokir-kata regexp=' + qRe('^.+(' + v.kata + ').*$'));
       L.push('/ip firewall filter add chain=forward layer7-protocol=blokir-kata action=drop comment="Blokir kata kunci di URL"');
     }
     return H('Blokir Situs') + L.join('\n') + '\n';
@@ -2550,8 +2561,9 @@ TOOLS.push(T('blokir-situs', 'firewall', 'Blokir Situs', 'Block Websites',
     if (v.paksa) { E.push('Pengalihan port 53 memaksa semua klien memakai DNS router walaupun mereka mengatur DNS sendiri di perangkatnya, dan allow-remote-requests menyalakan layanan DNS router untuk klien.'); }
     if (v.tls) { E.push('Lapis TLS host membaca nama server di awal koneksi HTTPS (bagian ini tidak terenkripsi) lalu membuang koneksi yang cocok, jadi situs tetap terblokir walaupun klien memakai DNS luar atau DNS terenkripsi.'); }
     if (v.quic) { E.push('QUIC/HTTP3 berjalan di UDP 443 dan menyembunyikan nama server dari penyaring TLS host. Menutupnya memaksa peramban kembali ke HTTPS biasa di TCP yang bisa disaring. Dampaknya situs lain yang memakai HTTP3 ikut turun ke TCP, sedikit lebih lambat di kunjungan pertama tetapi tetap terbuka.'); }
+    if (v.doh) { E.push('Lapis DoH/DoT menutup jalan pintas DNS terenkripsi: koneksi HTTPS ke alamat server DNS publik yang dikenal dibuang, dan port 853 (DNS over TLS) ditutup total. Browser seperti Chrome yang memakai "DNS aman" akan gagal menyambung ke server itu lalu otomatis kembali memakai DNS jaringan, yaitu DNS router, sehingga lapis 1 bisa menyaringnya. Daftar alamatnya adalah resolver publik yang umum dipakai browser dan sistem operasi.'); }
     if (v.iplist) { E.push('Lapis IP menerjemahkan domain menjadi alamat IP lalu membuang paket ke sana. Situs di balik CDN berbagi IP dengan banyak situs lain, jadi lapis ini sengaja mati secara bawaan agar tidak memblokir situs yang tidak bersalah.'); }
-    E.push('Keterbatasan yang jujur: aplikasi yang memakai DNS terenkripsi tertanam (DoH di dalam aplikasi) dan VPN tetap bisa lolos dari semua lapis ini. Untuk sekolah atau kantor, padukan dengan kebijakan perangkat klien.');
+    E.push('Keterbatasan yang jujur: aplikasi yang memakai server DoH yang tidak ada di daftar, VPN, situs yang menyembunyikan nama servernya dengan ECH, dan jalur IPv6 murni tetap bisa lolos dari lapis ini. Untuk sekolah atau kantor, padukan dengan kebijakan perangkat klien.');
     return E;
   }));
 
@@ -2907,7 +2919,7 @@ TOOLS.push(T('block-web-l7', 'firewall', 'Block Website (Layer 7)', 'Block Websi
     var words = String(v.daftar).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
     var esc = words.map(function (w) { return w.replace(/\./g, '\\.'); }).join('|');
     var L = [];
-    L.push('/ip firewall layer7-protocol add name=blokir-situs-l7 regexp=' + q('^.+(' + esc + ').*$'));
+    L.push('/ip firewall layer7-protocol add name=blokir-situs-l7 regexp=' + qRe('^.+(' + esc + ').*$'));
     L.push('/ip firewall filter add chain=' + v.chain + ' layer7-protocol=blokir-situs-l7 action=drop comment=' + q(v.komen || 'Situs diblokir Layer 7'));
     return H('Block Website (Layer 7)') + L.join('\n') + '\n';
   },
@@ -3344,7 +3356,7 @@ TOOLS.push(T('block-sharing-hotspot-ttl', 'firewall', 'Blokir Berbagi Hotspot (U
     f('log', 'Catat tiap paket yang TTL-nya diubah ke log', 'check', true, { help: 'Hati-hati: log menjadi sangat ramai karena tiap paket dicatat. Matikan bila hanya butuh blokirnya saja.' })
   ],
   function (v) {
-    var s = '/ip firewall mangle add chain=postrouting out-interface=' + v.iface + ' action=change-ttl new-ttl=' + v.ttl + ' passthrough=yes comment="Turunkan TTL di pintu hotspot"';
+    var s = '/ip firewall mangle add chain=postrouting out-interface=' + v.iface + ' action=change-ttl new-ttl=set:' + v.ttl + ' passthrough=yes comment="Turunkan TTL di pintu hotspot"';
     if (v.log) { s += ' log=yes log-prefix="TTL-hotspot"'; }
     return H('Blokir Berbagi Hotspot (Ubah TTL)') + s + '\n';
   },
@@ -4264,8 +4276,8 @@ TOOLS.push(T('hotspot-ip-binding', 'hotspot', 'Hotspot IP Binding (MAC)', 'Hotsp
 TOOLS.push(T('ppp-secret', 'hotspot', 'PPP Secret', 'PPP Secret',
   'Tambah satu akun PPP (PPPoE, PPTP, L2TP, SSTP, atau OpenVPN) lengkap dengan profil dan batas kecepatan.',
   [
-    f('user', 'Nama pengguna', 'text', '', { mono: 1 }),
-    f('pass', 'Password', 'text', '', { mono: 1 }),
+    f('user', 'Nama pengguna', 'text', 'pelanggan1', { mono: 1, help: 'Contoh nama akun. Ganti dengan nama pengguna pelanggan aslimu.' }),
+    f('pass', 'Password', 'text', 'sandi123', { mono: 1, help: 'Contoh password. Ganti dengan password pelanggan aslimu.' }),
     f('service', 'Layanan (service)', 'select', 'pppoe', { opts: ['any', 'pppoe', 'pptp', 'l2tp', 'sstp', 'ovpn'] }),
     f('profil', 'Profil PPP', 'text', 'default', { mono: 1 }),
     f('rate', 'Batas kecepatan (rate limit, opsional)', 'text', '', { opt: 1, mono: 1, ph: '5M/5M', help: 'Format unduh/unggah dari sisi pelanggan, contoh 5M/5M. Kosongkan bila memakai rate limit dari profil.' }),
@@ -4632,7 +4644,7 @@ TOOLS.push(T('wireguard', 'vpn', 'WireGuard Server dan Satu Peer', 'WireGuard Se
     f('port', 'Port dengar (UDP)', 'number', '13231', { v: 'port' }),
     f('ipwg', 'Alamat router di jaringan VPN', 'cidr', '10.10.10.1/24', { v: 'cidr' }),
     f('peerNama', 'Nama peer', 'text', 'laptop-admin', { mono: 1 }),
-    f('peerKey', 'Public key peer', 'text', '', { mono: 1, help: 'Buat pasangan kunci di aplikasi WireGuard perangkat peer, lalu tempel public key nya di sini.' }),
+    f('peerKey', 'Public key peer', 'text', 'YAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=', { mono: 1, help: 'Nilai bawaan adalah contoh dari dokumentasi WireGuard. Buat pasangan kunci di aplikasi WireGuard perangkat peer, lalu ganti dengan public key aslinya.' }),
     f('peerAllowed', 'Alamat peer di VPN (allowed address)', 'cidr', '10.10.10.2/32', { v: 'cidr' }),
     f('endpoint', 'Endpoint peer (host:port, opsional)', 'text', '', { opt: 1, mono: 1, ph: 'vpn.kantor.contoh:13231', help: 'Isi hanya bila peer yang memulai koneksi dari alamat tetap dan router perlu menelepon balik.' })
   ],
@@ -4646,14 +4658,14 @@ TOOLS.push(T('wireguard', 'vpn', 'WireGuard Server dan Satu Peer', 'WireGuard Se
       peer += ' endpoint-address=' + ep[0] + ' endpoint-port=' + (ep[1] || v.port) + ' persistent-keepalive=25s';
     }
     L.push(peer);
-    L.push('/ip firewall filter add chain=input protocol=udp dst-port=' + v.port + ' action=accept comment="Izinkan WireGuard masuk" place-before=0');
+    L.push('/ip firewall filter add chain=input protocol=udp dst-port=' + v.port + ' action=accept comment="Izinkan WireGuard masuk"');
     return H('WireGuard Server dan Satu Peer') + L.join('\n') + '\n';
   },
   function () {
     return [
       'Router membuat kunci privatnya sendiri saat interface dibuat. Public key router bisa dilihat dengan perintah /interface wireguard print, lalu dimasukkan ke konfigurasi peer.',
       'Allowed address adalah identitas peer di dalam tunnel. Satu peer satu alamat /32 menghindari tabrakan.',
-      'Aturan firewall membuka port UDP WireGuard. Baris ini ditaruh paling atas chain input (place-before 0) agar tidak kalah oleh aturan drop umum.',
+      'Aturan firewall membuka port UDP WireGuard di chain input. Bila routermu sudah punya aturan drop umum di chain input, pindahkan aturan ini ke atas aturan drop itu (seret di Winbox) agar tidak kalah.',
       'Di sisi peer, isi endpoint dengan alamat publik router dan allowed address 0.0.0.0/0 bila semua trafik peer mau dilewatkan tunnel, atau cukup jaringan lokalmu bila hanya untuk akses admin.'
     ];
   }));
@@ -4746,8 +4758,8 @@ TOOLS.push(T('pptp-client', 'vpn', 'PPTP Client', 'PPTP Client',
   'Router menyambung sebagai klien ke server PPTP, misalnya ke kantor pusat yang masih memakai PPTP.',
   [
     f('server', 'Alamat server PPTP', 'text', 'vpn.kantor.contoh', { mono: 1 }),
-    f('user', 'Nama pengguna', 'text', '', { mono: 1 }),
-    f('pass', 'Password', 'text', '', { mono: 1 }),
+    f('user', 'Nama pengguna', 'text', 'user-vpn', { mono: 1, help: 'Contoh nama akun. Ganti dengan akun PPTP aslimu.' }),
+    f('pass', 'Password', 'text', 'sandivpn', { mono: 1, help: 'Contoh password. Ganti dengan password aslimu.' }),
     f('droute', 'Jadikan rute default', 'check', false, { help: 'Aktifkan hanya bila memang semua trafik router mau dilewatkan tunnel ini.' })
   ],
   function (v) {
@@ -4768,8 +4780,8 @@ TOOLS.push(T('ovpn-client', 'vpn', 'OpenVPN Client Dasar', 'Basic OpenVPN Client
   [
     f('server', 'Alamat server OpenVPN', 'text', 'vpn.kantor.contoh', { mono: 1 }),
     f('port', 'Port server', 'number', '1194', { v: 'port' }),
-    f('user', 'Nama pengguna', 'text', '', { mono: 1 }),
-    f('pass', 'Password', 'text', '', { mono: 1 }),
+    f('user', 'Nama pengguna', 'text', 'user-vpn', { mono: 1, help: 'Contoh nama akun. Ganti dengan akun OpenVPN aslimu.' }),
+    f('pass', 'Password', 'text', 'sandivpn', { mono: 1, help: 'Contoh password. Ganti dengan password aslimu.' }),
     f('mode', 'Mode', 'select', 'ip', { opts: [{ v: 'ip', l: 'ip (tunnel point to point)' }, { v: 'ethernet', l: 'ethernet (tap, menjembatani LAN)' }] }),
     f('cert', 'Nama sertifikat klien (opsional)', 'text', '', { opt: 1, mono: 1, help: 'Isi bila server meminta sertifikat klien. Sertifikat harus sudah diimpor ke router.' })
   ],
