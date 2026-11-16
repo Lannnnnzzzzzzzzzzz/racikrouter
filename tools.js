@@ -95,17 +95,24 @@ TOOLS.push(T('identitas-ntp', 'dasar', 'Identitas Router dan NTP', 'Router Ident
     f('ntp', 'Server NTP', 'text', 'id.pool.ntp.org', { mono: 1, help: 'id.pool.ntp.org adalah kumpulan server jam Indonesia.' })
   ],
   function (v) {
-    return H('Identitas Router dan NTP') +
+    var s = H('Identitas Router dan NTP') +
       '/system identity set name=' + v.nama + '\n' +
-      '/system clock set time-zone-name=' + v.zona + '\n' +
-      '/system ntp client set enabled=yes\n' +
-      '/system ntp client servers add address=' + v.ntp + '\n';
+      '/system clock set time-zone-name=' + v.zona + '\n';
+    if (RV() === 6) {
+      s += '/system ntp client set enabled=yes primary-ntp=[:resolve ' + v.ntp + ']\n';
+    } else {
+      s += '/system ntp client set enabled=yes\n' +
+        '/system ntp client servers add address=' + v.ntp + '\n';
+    }
+    return s;
   },
   function () {
     return [
       'Baris pertama mengganti nama identitas router menjadi nilai yang kamu isi.',
       'Zona waktu menentukan jam lokal router. Scheduler dan log mengikuti zona ini.',
-      'Dua baris terakhir menyalakan klien NTP dan mendaftarkan server jam, jadi jam router selalu akurat tanpa diatur manual.'
+      RV() === 6
+        ? 'Baris terakhir menyalakan klien NTP RouterOS 6 dan mengisinya dengan server jam yang namanya diterjemahkan dulu menjadi alamat IP, jadi jam router selalu akurat tanpa diatur manual.'
+        : 'Dua baris terakhir menyalakan klien NTP dan mendaftarkan server jam, jadi jam router selalu akurat tanpa diatur manual.'
     ];
   }));
 
@@ -1003,8 +1010,12 @@ TOOLS.push(T('konfigurasi-dasar', 'dasar', 'Konfigurasi Dasar (Satu Script Awal)
       L.push('/ip dhcp-server add name=dhcp-lan interface=' + v.lan + ' address-pool=pool-lan disabled=no');
     }
     L.push('/ip dns set servers=' + v.dns + ' allow-remote-requests=yes');
-    L.push('/system ntp client set enabled=yes');
-    L.push('/system ntp client servers add address=id.pool.ntp.org');
+    if (RV() === 6) {
+      L.push('/system ntp client set enabled=yes primary-ntp=[:resolve id.pool.ntp.org]');
+    } else {
+      L.push('/system ntp client set enabled=yes');
+      L.push('/system ntp client servers add address=id.pool.ntp.org');
+    }
     L.push('/ip route add gateway=' + v.gw + ' comment="Rute default lewat ' + v.wan + '"');
     if (v.nat) { L.push('/ip firewall nat add chain=srcnat out-interface=' + v.wan + ' action=masquerade comment="NAT keluar ' + v.wan + '"'); }
     if (v.pass) { L.push('/user set admin password=' + q(v.pass)); }
@@ -1380,28 +1391,27 @@ TOOLS.push(T('ntp-indonesia', 'dasar', 'Klien NTP/SNTP Zona Waktu Indonesia', 'I
   'Atur zona waktu Indonesia dan sinkronkan jam router lewat server NTP atau SNTP, lengkap dengan server cadangan.',
   [
     f('zona', 'Zona waktu', 'select', 'Asia/Jakarta', { opts: ['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura'] }),
-    f('mode', 'Mode klien jam', 'select', 'NTP', { opts: ['NTP', 'SNTP'], help: 'NTP memakai klien jam modern RouterOS v7, SNTP memakai klien lama yang lebih ringan.' }),
+    f('mode', 'Mode klien jam', 'select', 'NTP', { opts: ['NTP', 'SNTP'], help: 'Di RouterOS 7 hanya ada satu klien jam sehingga kedua mode menghasilkan perintah yang sama. Di RouterOS 6 script memakai klien bawaan dengan server utama dan cadangan.' }),
     f('utama', 'Server jam utama', 'select', 'id.pool.ntp.org', { opts: ['id.pool.ntp.org', '0.id.pool.ntp.org', 'time.google.com', 'pool.ntp.org'] }),
     f('cadangan', 'Server jam cadangan', 'text', 'time.google.com', { mono: 1, help: 'Dipakai bila server utama tidak menjawab.' })
   ],
   function (v) {
     var L = [];
     L.push('/system clock set time-zone-name=' + v.zona);
-    if (v.mode === 'SNTP') {
-      L.push('/system sntp client set enabled=yes mode=unicast primary-server=' + v.utama + ' secondary-server=' + v.cadangan);
-      L.push('# Cek jam: /system sntp client print lalu /system clock print');
+    if (RV() === 6) {
+      L.push('/system ntp client set enabled=yes primary-ntp=[:resolve ' + v.utama + '] secondary-ntp=[:resolve ' + v.cadangan + ']');
     } else {
       L.push('/system ntp client set enabled=yes');
       L.push('/system ntp client servers add address=' + v.utama + ' comment="Server jam utama"');
       L.push('/system ntp client servers add address=' + v.cadangan + ' comment="Server jam cadangan"');
-      L.push('# Cek jam: /system ntp client print lalu /system clock print');
     }
+    L.push('# Cek jam: /system ntp client print lalu /system clock print');
     return H('Klien NTP/SNTP Zona Waktu Indonesia') + L.join('\n') + '\n';
   },
   function (v) {
     return [
       'Zona waktu ' + v.zona + ' menentukan jam lokal router. Scheduler, log, dan voucher hotspot semuanya mengikuti jam ini, jadi jam yang meleset membuat jadwal ikut meleset.',
-      v.mode === 'SNTP' ? 'Mode SNTP memakai klien lama yang hanya bertanya ke dua server yang kamu isi. Cara ini ringan dan cukup untuk router kecil.' : 'Mode NTP memakai klien jam modern RouterOS v7 yang bisa menampung banyak server dan memilih sendiri mana yang paling akurat.',
+      RV() === 6 ? 'RouterOS 6 memakai klien jam bawaan dengan satu server utama dan satu cadangan. Nama server diterjemahkan dulu menjadi alamat IP karena klien lama ini hanya menerima alamat IP.' : (v.mode === 'SNTP' ? 'RouterOS 7 hanya punya satu klien jam, jadi mode SNTP memakai klien NTP yang sama, diisi dua server yang kamu pilih.' : 'Mode NTP memakai klien jam RouterOS 7 yang bisa menampung banyak server dan memilih sendiri mana yang paling akurat.'),
       'Server id.pool.ntp.org adalah kumpulan server jam Indonesia, sedangkan time.google.com adalah server jam Google. Keduanya gratis dan bisa dipakai siapa saja.',
       'Bila jam router tetap salah setelah script jalan, periksa dulu apakah router bisa mencapai internet dan apakah firewall tidak memblokir port UDP 123.'
     ];
