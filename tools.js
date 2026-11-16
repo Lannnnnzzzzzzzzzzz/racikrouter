@@ -99,7 +99,7 @@ TOOLS.push(T('identitas-ntp', 'dasar', 'Identitas Router dan NTP', 'Router Ident
       '/system identity set name=' + v.nama + '\n' +
       '/system clock set time-zone-name=' + v.zona + '\n';
     if (RV() === 6) {
-      s += '/system ntp client set enabled=yes primary-ntp=[:resolve ' + v.ntp + ']\n';
+      s += '/system ntp client set enabled=yes server-dns-names=' + v.ntp + '\n';
     } else {
       s += '/system ntp client set enabled=yes\n' +
         '/system ntp client servers add address=' + v.ntp + '\n';
@@ -1011,7 +1011,7 @@ TOOLS.push(T('konfigurasi-dasar', 'dasar', 'Konfigurasi Dasar (Satu Script Awal)
     }
     L.push('/ip dns set servers=' + v.dns + ' allow-remote-requests=yes');
     if (RV() === 6) {
-      L.push('/system ntp client set enabled=yes primary-ntp=[:resolve id.pool.ntp.org]');
+      L.push('/system ntp client set enabled=yes server-dns-names=id.pool.ntp.org');
     } else {
       L.push('/system ntp client set enabled=yes');
       L.push('/system ntp client servers add address=id.pool.ntp.org');
@@ -1399,7 +1399,7 @@ TOOLS.push(T('ntp-indonesia', 'dasar', 'Klien NTP/SNTP Zona Waktu Indonesia', 'I
     var L = [];
     L.push('/system clock set time-zone-name=' + v.zona);
     if (RV() === 6) {
-      L.push('/system ntp client set enabled=yes primary-ntp=[:resolve ' + v.utama + '] secondary-ntp=[:resolve ' + v.cadangan + ']');
+      L.push('/system ntp client set enabled=yes server-dns-names=' + v.utama + ',' + v.cadangan);
     } else {
       L.push('/system ntp client set enabled=yes');
       L.push('/system ntp client servers add address=' + v.utama + ' comment="Server jam utama"');
