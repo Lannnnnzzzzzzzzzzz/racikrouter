@@ -2488,30 +2488,71 @@ TOOLS.push(T('hairpin-nat', 'firewall', 'Hairpin NAT', 'Hairpin NAT',
   }));
 
 TOOLS.push(T('blokir-situs', 'firewall', 'Blokir Situs', 'Block Websites',
-  'Blokir daftar domain dari jaringan lokal memakai address list dan firewall filter.',
+  'Blokir daftar domain dari jaringan lokal dengan tiga lapis: DNS router diarahkan ke 127.0.0.1, HTTPS dibuang lewat TLS host, dan QUIC ditutup agar browser tidak lewat jalur lain.',
   [
     f('daftar', 'Daftar domain yang diblokir', 'textarea', 'situs-judi.contoh\nsitus-dewasa.contoh', { help: 'Satu domain per baris. Domain berakhiran .contoh adalah contoh penulisan, ganti dengan domain aslimu.', mono: 1 }),
+    f('dns', 'Lapis DNS: arahkan domain ke 127.0.0.1 di DNS router (termasuk subdomain)', 'check', true),
+    f('paksa', 'Paksa semua klien memakai DNS router (alihkan port 53)', 'check', true, { help: 'Tanpa ini, klien yang mengatur DNS sendiri (misalnya 8.8.8.8 di HP) lolos dari lapis DNS. Lapis TLS host di bawah tetap menahan HTTPS mereka.' }),
+    f('tls', 'Lapis HTTPS: buang koneksi TLS ke domain ini (port 443)', 'check', true),
+    f('quic', 'Tutup QUIC/HTTP3 (UDP port 443) agar browser tidak mengelak lewat UDP', 'check', true),
+    f('iplist', 'Lapis IP: address list domain + buang paket ke IP-nya', 'check', false, { help: 'Lapisan tambahan. Situs di balik CDN berbagi IP dengan situs lain, jadi lapis ini bisa ikut memblokir situs yang tidak bersalah.' }),
     f('kata', 'Kata kunci di URL (opsional)', 'text', '', { opt: 1, ph: 'judi', help: 'Bila diisi, dibuat juga penyaring Layer 7 yang menangkap kata ini di dalam alamat dan isi permintaan HTTP.' }),
     f('komen', 'Komentar aturan', 'text', 'Situs diblokir', { opt: 1 })
   ],
   function (v) {
     var lines = String(v.daftar).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var komen = v.komen || 'Situs diblokir';
     var L = [];
-    lines.forEach(function (d) { L.push('/ip firewall address-list add list=situs-diblokir address=' + d + ' comment=' + q(v.komen || 'Diblokir')); });
-    L.push('/ip firewall filter add chain=forward dst-address-list=situs-diblokir action=drop comment=' + q(v.komen || 'Situs diblokir'));
+    if (v.dns) {
+      L.push('# Lapis 1: DNS router menjawab domain ini dengan 127.0.0.1, termasuk semua subdomainnya');
+      lines.forEach(function (d) {
+        var esc = d.replace(/\./g, '\\.');
+        // Jangkar akhir pola ditulis \$ (satu garis miring terbalik): tanda $ tepat sebelum
+        // tanda kutup penutup merusak pembacaan string RouterOS dan menggagalkan entri ini.
+        var reQ = '"' + ('^.+\\.' + esc).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '\\$"';
+        L.push('/ip dns static add name=' + d + ' address=127.0.0.1 comment=' + q(komen));
+        L.push('/ip dns static add regexp=' + reQ + ' address=127.0.0.1 comment=' + q(komen + ' (subdomain)'));
+        L.push('/ip dns static add name=' + d + ' type=AAAA address=::1 comment=' + q(komen));
+        L.push('/ip dns static add regexp=' + reQ + ' type=AAAA address=::1 comment=' + q(komen + ' (subdomain)'));
+      });
+      if (v.paksa) {
+        L.push('# Paksa klien memakai DNS router: alihkan semua permintaan DNS (port 53) ke router');
+        L.push('/ip dns set allow-remote-requests=yes');
+        L.push('/ip firewall nat add chain=dstnat protocol=udp dst-port=53 action=redirect to-ports=53 comment=' + q('Paksa DNS ke router'));
+        L.push('/ip firewall nat add chain=dstnat protocol=tcp dst-port=53 action=redirect to-ports=53 comment=' + q('Paksa DNS ke router'));
+      }
+    }
+    if (v.tls) {
+      L.push('# Lapis 2: buang koneksi HTTPS yang nama servernya (SNI) cocok dengan domain ini');
+      lines.forEach(function (d) {
+        L.push('/ip firewall filter add chain=forward protocol=tcp dst-port=443 tls-host=' + d + ' action=drop comment=' + q(komen));
+        L.push('/ip firewall filter add chain=forward protocol=tcp dst-port=443 tls-host=*.' + d + ' action=drop comment=' + q(komen + ' (subdomain)'));
+      });
+    }
+    if (v.quic) {
+      L.push('# Lapis 3: tutup QUIC/HTTP3 (UDP 443) untuk semua tujuan, browser jatuh kembali ke TCP dan tertangkap lapis 2');
+      L.push('/ip firewall filter add chain=forward protocol=udp dst-port=443 action=drop comment="Blokir QUIC"');
+    }
+    if (v.iplist) {
+      L.push('# Lapis tambahan: address list berisi IP hasil terjemahan domain, paket ke sana dibuang');
+      lines.forEach(function (d) { L.push('/ip firewall address-list add list=situs-diblokir address=' + d + ' comment=' + q(komen)); });
+      L.push('/ip firewall filter add chain=forward dst-address-list=situs-diblokir action=drop comment=' + q(komen));
+    }
     if (v.kata) {
       L.push('/ip firewall layer7-protocol add name=blokir-kata regexp=' + q('^.+(' + v.kata + ').*$'));
       L.push('/ip firewall filter add chain=forward layer7-protocol=blokir-kata action=drop comment="Blokir kata kunci di URL"');
     }
     return H('Blokir Situs') + L.join('\n') + '\n';
   },
-  function () {
-    return [
-      'Address list berisi domain akan diterjemahkan RouterOS menjadi alamat IP secara berkala lewat DNS.',
-      'Aturan forward membuang setiap paket yang tujuannya masuk daftar itu.',
-      'Keterbatasan yang jujur: situs modern memakai HTTPS dan banyak domain bersama di CDN, jadi pemblokiran di tingkat IP tidak selalu presisi. Penyaring Layer 7 hanya membaca trafik HTTP yang tidak terenkripsi.',
-      'Untuk kebutuhan sekolah atau kantor yang serius, pemblokiran biasanya dipadukan dengan DNS filter agar lebih rapi.'
-    ];
+  function (v) {
+    var E = [];
+    if (v.dns) { E.push('Lapis DNS membuat router menjawab domain yang diblokir (dan semua subdomainnya) dengan 127.0.0.1, jadi peramban klien berakhir di alamat kosong dan situs tidak pernah termuat. Entri AAAA ke ::1 menutup jalan lewat IPv6.'); }
+    if (v.paksa) { E.push('Pengalihan port 53 memaksa semua klien memakai DNS router walaupun mereka mengatur DNS sendiri di perangkatnya, dan allow-remote-requests menyalakan layanan DNS router untuk klien.'); }
+    if (v.tls) { E.push('Lapis TLS host membaca nama server di awal koneksi HTTPS (bagian ini tidak terenkripsi) lalu membuang koneksi yang cocok, jadi situs tetap terblokir walaupun klien memakai DNS luar atau DNS terenkripsi.'); }
+    if (v.quic) { E.push('QUIC/HTTP3 berjalan di UDP 443 dan menyembunyikan nama server dari penyaring TLS host. Menutupnya memaksa peramban kembali ke HTTPS biasa di TCP yang bisa disaring. Dampaknya situs lain yang memakai HTTP3 ikut turun ke TCP, sedikit lebih lambat di kunjungan pertama tetapi tetap terbuka.'); }
+    if (v.iplist) { E.push('Lapis IP menerjemahkan domain menjadi alamat IP lalu membuang paket ke sana. Situs di balik CDN berbagi IP dengan banyak situs lain, jadi lapis ini sengaja mati secara bawaan agar tidak memblokir situs yang tidak bersalah.'); }
+    E.push('Keterbatasan yang jujur: aplikasi yang memakai DNS terenkripsi tertanam (DoH di dalam aplikasi) dan VPN tetap bisa lolos dari semua lapis ini. Untuk sekolah atau kantor, padukan dengan kebijakan perangkat klien.');
+    return E;
   }));
 
 TOOLS.push(T('proteksi-router', 'firewall', 'Proteksi Dasar Router', 'Basic Router Protection',
