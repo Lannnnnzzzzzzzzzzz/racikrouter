@@ -81,6 +81,7 @@ function selectedTools() {
     w.tools.forEach(function (tid) {
       var tool = byId(tid);
       if (!tool) { return; }
+      if (tool.ros && RR.getRos && tool.ros.indexOf(RR.getRos()) === -1) { return; }
       if (!map[tid]) { map[tid] = { tool: tool, stage: w.stage, labels: [] }; }
       if (w.stage < map[tid].stage) { map[tid].stage = w.stage; }
       map[tid].labels.push(w.label);
@@ -146,7 +147,7 @@ function generate() {
     });
     var out = '';
     try {
-      out = tool.template(v);
+      out = RR.gen ? RR.gen(tool, v) : tool.template(v);
     } catch (e) {
       errors.push(toolName(tool) + ' gagal dibuat: ' + e.message);
       out = '# Bagian ini gagal dibuat. Periksa isian ' + toolName(tool) + '.\n';
@@ -155,7 +156,7 @@ function generate() {
       '# Untuk keinginan: ' + entry.labels.join(' + ') + '\n' + out.replace(/\s+$/, ''));
   });
   var head = '# RacikRouter: Racikan Cepat\n' +
-    '# Gabungan script RouterOS v7 hasil Racik Cepat. Tempel di terminal MikroTik (Winbox, menu New Terminal).\n' +
+    '# Gabungan script RouterOS v' + (RR.getRos ? RR.getRos() : 7) + ' hasil Racik Cepat. Tempel di terminal MikroTik (Winbox, menu New Terminal).\n' +
     '# Keinginan yang diracik: ' + wishLabels.join('; ') + '\n' +
     '# Urutan bagian disusun dari dasar ke lanjutan. Baca lagi semua nilainya sebelum menjalankan di router produksi.\n';
   conflicts.forEach(function (c) {
@@ -184,10 +185,22 @@ function renderRacik() {
     }
   } catch (e) { /* abaikan muatan rusak */ }
 
+  function wishAvailable(w) {
+    if (!RR.getRos) { return true; }
+    return w.tools.some(function (tid) {
+      var tool = byId(tid);
+      return tool && (!tool.ros || tool.ros.indexOf(RR.getRos()) !== -1);
+    });
+  }
   var chips = '';
   GROUPS.forEach(function (g) {
     chips += '<div class="group"><h3 class="group-title">' + esc(g.name) + '</h3><div class="rc-chips">';
     g.wishes.forEach(function (w) {
+      if (!wishAvailable(w)) {
+        selected[w.id] = false;
+        chips += '<button type="button" class="rc-chip" data-wish="' + w.id + '" aria-pressed="false" disabled title="Khusus RouterOS 7">' + esc(w.label) + ' (khusus ROS 7)</button>';
+        return;
+      }
       chips += '<button type="button" class="rc-chip" data-wish="' + w.id + '" aria-pressed="' + (selected[w.id] ? 'true' : 'false') + '">' + esc(w.label) + '</button>';
     });
     chips += '</div></div>';
@@ -338,6 +351,7 @@ function renderRacik() {
     });
     var payload = {
       v: 1, k: 'racik',
+      rv: RR.getRos ? RR.getRos() : 7,
       w: Object.keys(selected).filter(function (w) { return selected[w]; }),
       f: f
     };

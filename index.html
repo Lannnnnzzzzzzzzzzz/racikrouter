@@ -15,6 +15,18 @@
 <link rel="stylesheet" href="racik.css">
 </head>
 <body>
+<div class="ros-gate" id="rosGate" hidden role="dialog" aria-modal="true" aria-labelledby="rosGateTitle">
+  <div class="ros-gate-card">
+    <span class="brand-mark" aria-hidden="true">R</span>
+    <h2 id="rosGateTitle" data-i18n="rosGateTitle">RouterOS kamu versi berapa?</h2>
+    <p data-i18n="rosGateSub">Pilih versi yang terpasang di routermu. Script, daftar tool, dan Racik Cepat akan menyesuaikan dengan versi itu.</p>
+    <div class="ros-gate-btns">
+      <button type="button" class="ros-pick" data-ros="6"><strong>RouterOS 6</strong><span data-i18n="ros6desc">Router lama: hAP lite, RB941, seri RB750 dan sejenisnya</span></button>
+      <button type="button" class="ros-pick" data-ros="7"><strong>RouterOS 7</strong><span data-i18n="ros7desc">Router baru: seri ax, hAP ac3, CHR, dan keluaran terkini</span></button>
+    </div>
+    <p class="ros-gate-note" data-i18n="rosGateNote">Salah pilih tidak apa-apa, versinya bisa diganti kapan saja lewat menu di samping.</p>
+  </div>
+</div>
 <aside class="sidebar" id="sidebar" aria-label="Navigasi utama">
   <div class="side-top">
     <a class="brand" href="#/">
@@ -62,7 +74,7 @@
   <main class="main" id="main" tabindex="-1">
     <div id="view"></div>
     <footer class="foot">
-      <p><strong>RacikRouter</strong> · <span data-i18n="footText">Script diracik dari isian kamu, jalankan di RouterOS v7 setelah kamu periksa. Situs ini tidak berafiliasi dengan MikroTik.</span></p>
+      <p><strong>RacikRouter</strong> · <span data-i18n="footText">Script diracik dari isian kamu, jalankan di RouterOS 6 atau 7 setelah kamu periksa. Situs ini tidak berafiliasi dengan MikroTik.</span></p>
       <p data-i18n="sideFoot">Semua proses berjalan di browser kamu. Tidak ada data yang dikirim ke server mana pun.</p>
     </footer>
   </main>

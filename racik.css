@@ -22,6 +22,8 @@
   max-width: 100%;
 }
 .rc-chip:hover { border-color: var(--accent); }
+.rc-chip[disabled] { opacity: 0.45; cursor: not-allowed; }
+.rc-chip[disabled]:hover { border-color: var(--line); }
 .rc-chip[aria-pressed="true"] {
   background: var(--accent-soft);
   border-color: var(--accent);

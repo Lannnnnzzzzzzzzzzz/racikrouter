@@ -178,7 +178,7 @@ function injectSharePanel() {
   resultCol.appendChild(panel);
   document.getElementById('shareMakeBtn').addEventListener('click', function () {
     var hide = document.getElementById('shareHideSecret').checked;
-    var payload = { v: 1, k: 'tool', t: tool.id, f: collectToolState(tool, hide) };
+    var payload = { v: 1, k: 'tool', t: tool.id, rv: RR.getRos ? RR.getRos() : 7, f: collectToolState(tool, hide) };
     encodePayload(payload).then(function (enc) {
       var link = location.origin + location.pathname + '#/resep/' + enc;
       var out = document.getElementById('shareOut');
@@ -236,6 +236,9 @@ function handleResepHash() {
   // secara sinkron (misalnya base64 tidak sah) tetap masuk jalur catch.
   Promise.resolve().then(function () { return decodePayload(enc); }).then(function (payload) {
     if (!payload || payload.v !== 1) { showResepError(); return; }
+    // Resep membawa versi RouterOS pembuatnya: samakan versi situs agar
+    // script yang tergenerate ulang persis sama dengan yang dibagikan.
+    if (payload.rv && window.RRapplyRos) { window.RRapplyRos(payload.rv); }
     if (payload.k === 'racik') {
       try { sessionStorage.setItem('rr-resep-racik', JSON.stringify(payload)); } catch (e) { /* abaikan */ }
       location.hash = '#/racik';

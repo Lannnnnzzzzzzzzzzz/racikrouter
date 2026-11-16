@@ -5,11 +5,32 @@
 (function () {
 'use strict';
 
+// Versi RouterOS tujuan, dipilih pengguna di situs (app.js memanggil
+// RR.setRos). Bawaan 7 agar perilaku lama tidak berubah.
+var ROSV = 7;
+function RV() { return ROSV; }
 function H(n) {
   return '# RacikRouter: ' + n + '\n' +
-    '# Script untuk RouterOS v7. Tempel di terminal MikroTik (Winbox, menu New Terminal).\n' +
+    '# Script untuk RouterOS v' + RV() + '. Tempel di terminal MikroTik (Winbox, menu New Terminal).\n' +
     '# Baca lagi semua nilainya sebelum menjalankan di router produksi.\n';
 }
+// Penyesuaian RouterOS 6 atas hasil akhir template: menu /routing table dan
+// /routing rule tidak ada di ROS 6. Di sana tabel routing digantikan
+// routing-mark pada rute, dan aturan routing tinggal di /ip route rule.
+function adapt6(s) {
+  if (RV() !== 6) { return s; }
+  var lines = String(s).split('\n');
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i];
+    if (/^\/routing table (add|remove) /.test(ln)) { continue; }
+    ln = ln.replace(/ routing-table=([A-Za-z0-9_.-]+)/g, ' routing-mark=$1');
+    ln = ln.replace(/^\/routing rule /, '/ip route rule ');
+    out.push(ln);
+  }
+  return out.join('\n');
+}
+function genScript(tool, v) { return adapt6(tool.template(v)); }
 function f(k, label, t, def, o) {
   var x = { k: k, label: label, t: t || 'text', def: (def === undefined ? '' : def) };
   if (o) { for (var p in o) { x[p] = o[p]; } }
@@ -1656,12 +1677,26 @@ TOOLS.push(T('ospf-dasar', 'routing', 'OSPF Dasar', 'Basic OSPF',
     f('redist', 'Umumkan juga jaringan yang terhubung langsung', 'check', false)
   ],
   function (v) {
+    if (RV() === 6) {
+      return H('OSPF Dasar') +
+        '/routing ospf instance add name=' + v.nama + ' router-id=' + v.rid + (v.redist ? ' redistribute-connected=as-type-1' : '') + '\n' +
+        '/routing ospf area add instance=' + v.nama + ' name=area-utama area-id=' + v.area + '\n' +
+        '/routing ospf network add network=' + v.net + ' area=area-utama\n';
+    }
     return H('OSPF Dasar') +
       '/routing ospf instance add name=' + v.nama + ' router-id=' + v.rid + (v.redist ? ' redistribute=connected' : '') + '\n' +
       '/routing ospf area add instance=' + v.nama + ' name=area-utama area-id=' + v.area + '\n' +
       '/routing ospf interface-template add area=area-utama networks=' + v.net + '\n';
   },
   function () {
+    if (RV() === 6) {
+      return [
+        'Instance adalah proses OSPF di router ini, dikenali tetangganya lewat Router ID.',
+        'Area 0.0.0.0 adalah backbone. Semua router yang bertetangga harus berada di area yang sama untuk bertukar rute.',
+        'Di RouterOS 6 jaringan yang diumumkan didaftarkan lewat /routing ospf network, belum memakai interface template seperti di RouterOS 7.',
+        'Setelah script ini jalan di dua router bertetangga, periksa hasilnya dengan perintah /routing ospf neighbor print.'
+      ];
+    }
     return [
       'Instance adalah proses OSPF di router ini, dikenali tetangganya lewat Router ID.',
       'Area 0.0.0.0 adalah backbone. Semua router yang bertetangga harus berada di area yang sama untuk bertukar rute.',
@@ -1681,6 +1716,17 @@ TOOLS.push(T('bgp-dasar', 'routing', 'BGP Dasar (eBGP)', 'Basic BGP (eBGP)',
   ],
   function (v) {
     var L = [];
+    if (RV() === 6) {
+      if (v.prefix) {
+        L.push('/routing filter add chain=bgp-keluar prefix=' + v.prefix + ' action=accept comment="Hanya umumkan prefix sendiri"');
+        L.push('/routing filter add chain=bgp-keluar action=reject comment="Tolak sisanya"');
+      }
+      L.push('/routing bgp instance add name=instansi-lokal as=' + v.as + ' router-id=' + v.rid);
+      var peer = '/routing bgp peer add name=peer-tetangga instance=instansi-lokal remote-address=' + v.peer + ' remote-as=' + v.asr;
+      if (v.prefix) { peer += ' out-filter=bgp-keluar'; }
+      L.push(peer);
+      return H('BGP Dasar (eBGP)') + L.join('\n') + '\n';
+    }
     if (v.prefix) {
       L.push('/routing filter rule add chain=bgp-keluar rule="if (dst in ' + v.prefix + ') { accept }" comment="Hanya umumkan prefix sendiri"');
       L.push('/routing filter rule add chain=bgp-keluar rule="reject" comment="Tolak sisanya"');
@@ -1693,6 +1739,14 @@ TOOLS.push(T('bgp-dasar', 'routing', 'BGP Dasar (eBGP)', 'Basic BGP (eBGP)',
     return H('BGP Dasar (eBGP)') + L.join('\n') + '\n';
   },
   function () {
+    if (RV() === 6) {
+      return [
+        'BGP adalah protokol yang dipakai antar jaringan besar untuk bertukar jangkauan alamat IP.',
+        'Filter keluar memastikan kamu hanya mengumumkan prefix milikmu sendiri. Tanpa filter, kesalahan umum adalah ikut meneruskan prefix orang lain.',
+        'Di RouterOS 6 sesi diatur lewat /routing bgp peer dan filternya memakai /routing filter, belum memakai connection dan filter rule seperti di RouterOS 7.',
+        'Periksa status sesi dengan perintah /routing bgp peer print.'
+      ];
+    }
     return [
       'BGP adalah protokol yang dipakai antar jaringan besar untuk bertukar jangkauan alamat IP.',
       'Filter keluar memastikan kamu hanya mengumumkan prefix milikmu sendiri. Tanpa filter, kesalahan umum adalah ikut meneruskan prefix orang lain.',
@@ -3954,7 +4008,7 @@ TOOLS.push(T('pppoe-client', 'hotspot', 'PPPoE Client (Dial ke ISP)', 'PPPoE Cli
   }));
 
 TOOLS.push(T('user-manager', 'hotspot', 'User Manager Lokal Dasar', 'Basic Local User Manager',
-  'Aktifkan User Manager bawaan RouterOS v7 sebagai pusat akun voucher, dihubungkan lewat RADIUS lokal.',
+  'Aktifkan User Manager bawaan RouterOS sebagai pusat akun voucher, dihubungkan lewat RADIUS lokal.',
   [
     f('secret', 'Shared secret RADIUS', 'text', '', { mono: 1, help: 'Kata sandi bersama antara router dan User Manager. Karena keduanya di mesin yang sama, alamat yang dipakai 127.0.0.1.' }),
     f('user', 'Pengguna pengelola User Manager', 'text', 'kasir', {}),
@@ -3962,6 +4016,16 @@ TOOLS.push(T('user-manager', 'hotspot', 'User Manager Lokal Dasar', 'Basic Local
   ],
   function (v) {
     var L = [];
+    if (RV() === 6) {
+      L.push('# Di RouterOS 6, User Manager adalah paket terpisah bernama user-manager.');
+      L.push('# Pastikan paketnya terpasang lebih dulu, periksa lewat /system package print.');
+      L.push('/radius add address=127.0.0.1 secret=' + q(v.secret) + ' service=hotspot timeout=3s comment="RADIUS ke User Manager lokal"');
+      L.push('/tool user-manager router add name=router-ini ip-address=127.0.0.1 shared-secret=' + q(v.secret));
+      L.push('/tool user-manager user add customer=admin username=' + q(v.user) + ' password=' + q(v.pass));
+      L.push('# Terakhir, pada profil server hotspot aktifkan pemakaian RADIUS:');
+      L.push('# /ip hotspot profile set [find] use-radius=yes');
+      return H('User Manager Lokal Dasar') + L.join('\n') + '\n';
+    }
     L.push('/user-manager set enabled=yes');
     L.push('/radius add address=127.0.0.1 secret=' + q(v.secret) + ' service=hotspot timeout=3s comment="RADIUS ke User Manager lokal"');
     L.push('/user-manager router add name=router-ini address=127.0.0.1 shared-secret=' + q(v.secret));
@@ -4869,7 +4933,7 @@ TOOLS.push(T('ap-rumahan', 'wireless', 'Access Point Rumahan', 'Home Access Poin
     f('pass', 'Kata sandi WiFi (minimal 8 karakter)', 'text', '', { mono: 1, help: 'Kosong tidak diizinkan oleh WPA2. Pakai kalimat yang mudah diingat penghuni rumah, bukan tanggal lahir.' })
   ],
   function (v) {
-    if (v.tipe === 'wifi') {
+    if (v.tipe === 'wifi' && RV() !== 6) {
       return H('Access Point Rumahan (wifiwave2)') +
         '/interface wifi security add name=profil-rumah authentication-types=wpa2-psk passphrase=' + q(v.pass) + '\n' +
         '/interface wifi set [find default-name=' + v.iface + '] configuration.ssid=' + q(v.ssid) + ' security=profil-rumah disabled=no comment="WiFi rumah"\n';
@@ -4895,7 +4959,7 @@ TOOLS.push(T('capsman-manager', 'wireless', 'CAPsMAN Manager', 'CAPsMAN Manager'
     f('negara', 'Negara (aturan kanal radio)', 'text', 'Indonesia', {})
   ],
   function (v) {
-    if (v.tipe === 'wifi') {
+    if (v.tipe === 'wifi' && RV() !== 6) {
       return H('CAPsMAN Manager (wifi)') +
         '/interface wifi capsman set enabled=yes\n' +
         '/interface wifi security add name=keamanan-bersama authentication-types=wpa2-psk passphrase=' + q(v.pass) + '\n' +
@@ -4924,7 +4988,7 @@ TOOLS.push(T('capsman-cap', 'wireless', 'CAP untuk Sisi Access Point', 'CAP for 
     f('disc', 'Interface penemuan (biasanya bridge)', 'text', 'bridge', { mono: 1 })
   ],
   function (v) {
-    if (v.tipe === 'wifi') {
+    if (v.tipe === 'wifi' && RV() !== 6) {
       return H('CAP (wifi)') +
         '/interface wifi cap set enabled=yes discovery-interfaces=' + v.disc + ' caps-man-addresses=' + v.mgr + '\n' +
         '# Setelah baris ini, radio pada AP ini dikendalikan manager. Cek pendaftaran di manager lewat menu CAPsMAN, tab Remote Cap.\n';
@@ -5605,6 +5669,14 @@ var DOWNLOADS = [
     links: [ { lId: 'Halaman unduh resmi', lEn: 'Official download page', url: 'https://mikrotik.com/download/tools' } ] }
 ];
 
-window.RR = { cats: CATS, tools: TOOLS, snippets: SNIPPETS, downloads: DOWNLOADS, loginHtml: loginHtml };
+// Kompatibilitas versi: Container dan WireGuard hanya ada di RouterOS 7.
+// Tool lain jalan di kedua versi (dengan penyesuaian sintaks bila perlu).
+var ROS7_ONLY = { 'container-adguard': true, 'wireguard': true };
+TOOLS.forEach(function (t) { t.ros = ROS7_ONLY[t.id] ? [7] : [6, 7]; });
+
+window.RR = { cats: CATS, tools: TOOLS, snippets: SNIPPETS, downloads: DOWNLOADS, loginHtml: loginHtml,
+  gen: genScript, adapt: adapt6,
+  setRos: function (v) { ROSV = Number(v) === 6 ? 6 : 7; },
+  getRos: function () { return ROSV; } };
 
 })();

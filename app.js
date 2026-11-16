@@ -42,14 +42,20 @@ function save(key, val) {
 var I18N = {
   id: {
     brandSub: 'Generator script MikroTik', sideFoot: 'Semua proses berjalan di browser kamu. Tidak ada data yang dikirim ke server mana pun.',
-    footText: 'Script diracik dari isian kamu, jalankan di RouterOS v7 setelah kamu periksa. Situs ini tidak berafiliasi dengan MikroTik.',
+    footText: 'Script diracik dari isian kamu, jalankan di RouterOS 6 atau 7 setelah kamu periksa. Situs ini tidak berafiliasi dengan MikroTik.',
+    rosLabel: 'Versi RouterOS', rosGateTitle: 'RouterOS kamu versi berapa?',
+    rosGateSub: 'Pilih versi yang terpasang di routermu. Script, daftar tool, dan Racik Cepat akan menyesuaikan dengan versi itu.',
+    ros6desc: 'Router lama: hAP lite, RB941, seri RB750 dan sejenisnya', ros7desc: 'Router baru: seri ax, hAP ac3, CHR, dan keluaran terkini',
+    rosGateNote: 'Salah pilih tidak apa-apa, versinya bisa diganti kapan saja lewat menu di samping.',
+    rosOnlyText: 'Tool ini memakai fitur yang hanya ada di RouterOS versi lain, jadi tidak bisa diracik untuk versi yang sedang kamu pilih.',
+    rosOnlyBtn: 'Ganti ke RouterOS ',
     home: 'Beranda', snippets: 'Database Script', downloads: 'Unduhan Resmi',
     dlSub: 'Tautan unduh aplikasi dan berkas resmi MikroTik, lengkap dengan penjelasan singkat. Berkasnya datang langsung dari server MikroTik, RacikRouter tidak menyimpan salinannya.',
     dlHomeNote: 'WinBox, Netinstall, The Dude, CHR, dan aplikasi resmi MikroTik lainnya, semua dari sumber aslinya.',
     dlOpen: 'Buka Unduhan Resmi', searchPh: 'Cari tool, misalnya failover, hotspot, wireguard, subnet...',
     searchShort: 'Cari tool...',
     homeTitle: 'Racik script MikroTik tanpa mengetik dari nol',
-    homeSub: 'Pilih tool, isi kolomnya, script RouterOS v7 langsung jadi dan berubah mengikuti isianmu. Salin ke terminal, atau unduh sebagai berkas .rsc.',
+    homeSub: 'Pilih tool, isi kolomnya, script RouterOS 6 atau 7 langsung jadi dan berubah mengikuti isianmu. Salin ke terminal, atau unduh sebagai berkas .rsc.',
     favs: 'Favorit kamu', history: 'Terakhir dipakai', allTools: 'Semua tool',
     favEmpty: 'Belum ada favorit. Ketuk bintang pada baris tool mana pun untuk menyimpannya di sini.',
     hisEmpty: 'Belum ada riwayat. Tool yang kamu buka akan muncul di sini.',
@@ -68,14 +74,20 @@ var I18N = {
   },
   en: {
     brandSub: 'MikroTik script generator', sideFoot: 'Everything runs in your browser. No data is sent to any server.',
-    footText: 'Scripts are built from your input, run them on RouterOS v7 after reviewing. This site is not affiliated with MikroTik.',
+    footText: 'Scripts are built from your input, run them on RouterOS 6 or 7 after reviewing. This site is not affiliated with MikroTik.',
+    rosLabel: 'RouterOS version', rosGateTitle: 'Which RouterOS version do you run?',
+    rosGateSub: 'Pick the version installed on your router. Scripts, the tool list, and Quick Mix will adapt to that version.',
+    ros6desc: 'Older routers: hAP lite, RB941, RB750 series and similar', ros7desc: 'Newer routers: ax series, hAP ac3, CHR, and current models',
+    rosGateNote: 'Picked the wrong one? You can switch any time from the side menu.',
+    rosOnlyText: 'This tool uses features that only exist in another RouterOS version, so it cannot be mixed for the version you picked.',
+    rosOnlyBtn: 'Switch to RouterOS ',
     home: 'Home', snippets: 'Script Database', downloads: 'Official Downloads',
     dlSub: 'Download links for official MikroTik apps and files, each with a short explanation. Files come straight from MikroTik servers, RacikRouter keeps no copies.',
     dlHomeNote: 'WinBox, Netinstall, The Dude, CHR, and other official MikroTik apps, all from their original source.',
     dlOpen: 'Open Official Downloads', searchPh: 'Search tools, e.g. failover, hotspot, wireguard, subnet...',
     searchShort: 'Search tools...',
     homeTitle: 'Build MikroTik scripts without typing from scratch',
-    homeSub: 'Pick a tool, fill the form, and the RouterOS v7 script appears instantly and follows your input. Copy it to a terminal, or download it as an .rsc file.',
+    homeSub: 'Pick a tool, fill the form, and the RouterOS 6 or 7 script appears instantly and follows your input. Copy it to a terminal, or download it as an .rsc file.',
     favs: 'Your favorites', history: 'Recently used', allTools: 'All tools',
     favEmpty: 'No favorites yet. Tap the star on any tool row to keep it here.',
     hisEmpty: 'No history yet. Tools you open will show up here.',
@@ -105,6 +117,21 @@ var ICON_STAR = '<svg viewBox="0 0 24 24" width="20" height="20" stroke="current
 var ICON_COPY = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
 var ICON_DL = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M4.5 20h15"/></svg>';
 var ICON_SEARCH = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>';
+
+/* ---------- Versi RouterOS ---------- */
+// ros = 0 berarti belum pernah memilih (gerbang pilihan ditampilkan).
+var ros = store('rr-ros', 0);
+function rosEff() { return ros === 6 ? 6 : 7; }
+function toolOk(tool) { return !tool.ros || tool.ros.indexOf(rosEff()) !== -1; }
+function applyRos(v, rerender) {
+  ros = Number(v) === 6 ? 6 : 7;
+  save('rr-ros', ros);
+  RR.setRos(ros);
+  var gate = document.getElementById('rosGate');
+  if (gate) { gate.hidden = true; }
+  if (rerender) { buildSidebar(); route(); }
+}
+window.RRapplyRos = function (v) { applyRos(v, true); };
 
 /* ---------- Tema ---------- */
 var theme = store('rr-theme', 'light');
@@ -206,10 +233,18 @@ function buildSidebar() {
   var menuItems = item('#/', 'home', 'home', t('home')) + item('#/racik', 'racik', 'wizard', 'Racik Cepat') + item('#/snippets', 'snippets', 'snippets', t('snippets'), RR.snippets.length) + item('#/unduhan', 'unduhan', 'unduhan', t('downloads'), RR.downloads.length);
   var catItems = '';
   RR.cats.forEach(function (c) {
-    var n = RR.tools.filter(function (x) { return x.cat === c.id; }).length;
+    var n = RR.tools.filter(function (x) { return x.cat === c.id && toolOk(x); }).length;
+    if (!n) { return; }
     catItems += item('#/kategori/' + c.id, c.id, c.id, catName(c), n);
   });
-  $sideNav.innerHTML = group('menu', t('navMenu'), menuItems) + group('kategori', t('navCats'), catItems);
+  var rosHtml = '<div class="ros-switch"><span class="ros-switch-label">' + esc(t('rosLabel')) + '</span>' +
+    '<div class="seg" role="group" aria-label="' + esc(t('rosLabel')) + '">' +
+    '<button type="button" class="seg-btn" data-rosv="6" aria-pressed="' + (rosEff() === 6 ? 'true' : 'false') + '">6</button>' +
+    '<button type="button" class="seg-btn" data-rosv="7" aria-pressed="' + (rosEff() === 7 ? 'true' : 'false') + '">7</button></div></div>';
+  $sideNav.innerHTML = rosHtml + group('menu', t('navMenu'), menuItems) + group('kategori', t('navCats'), catItems);
+  $sideNav.querySelectorAll('[data-rosv]').forEach(function (btn) {
+    btn.addEventListener('click', function () { applyRos(btn.getAttribute('data-rosv'), true); });
+  });
   $sideNav.querySelectorAll('[data-group-head]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var key = btn.getAttribute('data-group-head');
@@ -293,6 +328,7 @@ function renderHomeLists(query) {
   var html = '';
   if (query) {
     var hasil = RR.tools.filter(function (tool) {
+      if (!toolOk(tool)) { return false; }
       var c = catById(tool.cat);
       var hay = (tool.name.id + ' ' + tool.name.en + ' ' + tool.desc + ' ' + (c ? c.nameId + ' ' + c.nameEn : '')).toLowerCase();
       return hay.indexOf(query) !== -1;
@@ -312,14 +348,15 @@ function renderHomeLists(query) {
     }
     if (!hasil.length && !hasilDl.length) { html = '<p class="no-result">' + esc(t('noResult')) + '</p>'; }
   } else {
-    var favs = getFavs().map(byId).filter(Boolean);
+    var favs = getFavs().map(byId).filter(Boolean).filter(toolOk);
     html += '<section class="cat-block" aria-labelledby="favh"><div class="cat-head"><span class="cat-tag">FAV</span><h2 id="favh">' + esc(t('favs')) + '</h2></div>' +
       (favs.length ? toolListHtml(favs) : '<div style="margin-top:12px"><p class="empty-note">' + esc(t('favEmpty')) + '</p></div>') + '</section>';
-    var his = store('rr-history', []).map(byId).filter(Boolean);
+    var his = store('rr-history', []).map(byId).filter(Boolean).filter(toolOk);
     html += '<section class="cat-block" aria-labelledby="hish"><div class="cat-head"><span class="cat-tag">LOG</span><h2 id="hish">' + esc(t('history')) + '</h2></div>' +
       (his.length ? toolListHtml(his) : '<div style="margin-top:12px"><p class="empty-note">' + esc(t('hisEmpty')) + '</p></div>') + '</section>';
     RR.cats.forEach(function (c, i) {
-      var list = RR.tools.filter(function (x) { return x.cat === c.id; });
+      var list = RR.tools.filter(function (x) { return x.cat === c.id && toolOk(x); });
+      if (!list.length) { return; }
       html += catBlockHtml(c, i, list);
     });
     html += '<section class="cat-block" aria-labelledby="dlhomeh"><div class="cat-head"><span class="cat-tag">DL</span><h2 id="dlhomeh">' + esc(t('downloads')) + '</h2>' +
@@ -337,7 +374,7 @@ function renderCategory(catId) {
   document.body.classList.remove('has-actionbar');
   var c = catById(catId);
   if (!c) { renderHome(); return; }
-  var list = RR.tools.filter(function (x) { return x.cat === c.id; });
+  var list = RR.tools.filter(function (x) { return x.cat === c.id && toolOk(x); });
   document.title = catName(c) + ', RacikRouter';
   $view.innerHTML =
     '<a class="back-link" href="#/">' + esc(t('back')) + '</a>' +
@@ -492,6 +529,20 @@ function renderTool(id) {
   var tool = byId(id);
   if (!tool) { renderHome(); return; }
   currentRoute = 'tool';
+  if (!toolOk(tool)) {
+    document.title = toolName(tool) + ', RacikRouter';
+    document.body.classList.remove('has-actionbar');
+    var target = tool.ros && tool.ros.length ? tool.ros[0] : 7;
+    $view.innerHTML =
+      '<a class="back-link" href="#/">' + esc(t('back')) + '</a>' +
+      '<div class="page-head tool-head"><div class="tool-title-row"><h1>' + esc(toolName(tool)) + '</h1></div>' +
+      '<p>' + esc(tool.desc) + '</p></div>' +
+      '<section class="panel"><h2>RouterOS ' + target + '</h2>' +
+      '<p class="panel-sub">' + esc(t('rosOnlyText')) + '</p>' +
+      '<p><button type="button" class="btn btn-primary" id="rosSwitchBtn">' + esc(t('rosOnlyBtn')) + target + '</button></p></section>';
+    document.getElementById('rosSwitchBtn').addEventListener('click', function () { applyRos(target, true); });
+    return;
+  }
   pushHistory(id);
   document.title = toolName(tool) + ', RacikRouter';
   var c = catById(tool.cat);
@@ -626,7 +677,7 @@ function renderTool(id) {
     var out = '';
     var renderError = null;
     try {
-      out = isLogin ? RR.loginHtml(v, false) : tool.template(v);
+      out = isLogin ? RR.loginHtml(v, false) : RR.gen(tool, v);
     } catch (e) {
       renderError = e;
       out = '';
@@ -721,9 +772,17 @@ window.addEventListener('hashchange', route);
 
 /* ---------- Mulai ---------- */
 applyTheme();
+RR.setRos(rosEff());
 applyLangStatic();
 buildSidebar();
 route();
+if (!ros) {
+  var gate0 = document.getElementById('rosGate');
+  if (gate0) { gate0.hidden = false; }
+}
+document.querySelectorAll('[data-ros]').forEach(function (btn) {
+  btn.addEventListener('click', function () { applyRos(btn.getAttribute('data-ros'), true); });
+});
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
   navigator.serviceWorker.register('sw.js').catch(function () { /* situs tetap jalan tanpa service worker */ });
 }
