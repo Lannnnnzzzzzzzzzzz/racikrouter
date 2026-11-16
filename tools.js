@@ -43,6 +43,7 @@ function T(id, cat, nId, nEn, desc, fields, template, explain, extra) {
 }
 function q(s) { return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'; }
 function qRe(s) { return '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$$/, function () { return '\\$'; }) + '"'; }
+function qAlert(s) { return '"' + String(s).replace(/"/g, '\\"').replace(/\$/g, '\\$') + '"'; }
 function ipPart(cidr) { return String(cidr).split('/')[0]; }
 function prefixPart(cidr) { var p = String(cidr).split('/')[1]; return p ? p : '24'; }
 function ipToNum(ip) { var a = String(ip).split('.').map(Number); return ((a[0] * 256 + a[1]) * 256 + a[2]) * 256 + a[3]; }
@@ -1226,7 +1227,11 @@ TOOLS.push(T('discover-rogue-dhcp', 'dasar', 'Temukan DHCP Server Nakal Tak Dike
     if (v.aksi === 'telegram' && (!v.token || !v.chat)) {
       L.push('# ISI DULU token bot dan chat id di form: perintah fetch di bawah memakai placeholder TOKENBOT dan CHATID dan pengiriman akan gagal sampai diganti.');
     }
-    L.push('/ip dhcp-server alert add interface=' + v.iface + ' on-alert={' + onAlert + '} comment="Awasi DHCP server nakal"');
+    if (RV() === 6) {
+      L.push('/ip dhcp-server alert add interface=' + v.iface + ' on-alert=' + qAlert(onAlert) + ' comment="Awasi DHCP server nakal"');
+    } else {
+      L.push('/ip dhcp-server alert add interface=' + v.iface + ' on-alert={' + onAlert + '} comment="Awasi DHCP server nakal"');
+    }
     return H('Temukan DHCP Server Nakal Tak Dikenal') + L.join('\n') + '\n';
   },
   function () {
@@ -4143,7 +4148,11 @@ TOOLS.push(T('pppoe-isolasi', 'hotspot', 'Isolasi Pelanggan PPPoE', 'PPPoE Custo
     }
     if (v.antiRogue) {
       L.push('# Bagian 4: peringatan DHCP server asing');
-      L.push('/ip dhcp-server alert add interface=' + v.iface + ' alert-timeout=none on-alert={:log warning "DHCP asing terdeteksi pada interface pelanggan, periksa perangkat yang baru terpasang"} disabled=no');
+      if (RV() === 6) {
+        L.push('/ip dhcp-server alert add interface=' + v.iface + ' alert-timeout=none on-alert=' + qAlert(':log warning "DHCP asing terdeteksi pada interface pelanggan, periksa perangkat yang baru terpasang"') + ' disabled=no');
+      } else {
+        L.push('/ip dhcp-server alert add interface=' + v.iface + ' alert-timeout=none on-alert={:log warning "DHCP asing terdeteksi pada interface pelanggan, periksa perangkat yang baru terpasang"} disabled=no');
+      }
     }
     if (v.blokirSesama) {
       L.push('# Bagian 5: blokir trafik antar pelanggan');
@@ -4687,7 +4696,7 @@ TOOLS.push(T('l2tp-server', 'vpn', 'L2TP IPsec Server', 'L2TP IPsec Server',
     L.push('/ppp profile add name=profil-l2tp local-address=' + v.gw + ' remote-address=pool-l2tp dns-server=' + v.dns);
     L.push('/interface l2tp-server server set enabled=yes use-ipsec=yes ipsec-secret=' + q(v.secret) + ' default-profile=profil-l2tp authentication=mschap2');
     L.push('/ppp secret add name=' + q(v.user) + ' password=' + q(v.pass) + ' service=l2tp profile=profil-l2tp');
-    L.push('/ip firewall filter add chain=input protocol=udp dst-port=500,4500,1701 action=accept comment="Izinkan L2TP IPsec masuk" place-before=0');
+    L.push('/ip firewall filter add chain=input protocol=udp dst-port=500,4500,1701 action=accept comment="Izinkan L2TP IPsec masuk"');
     return H('L2TP IPsec Server') + L.join('\n') + '\n';
   },
   function () {
@@ -4715,7 +4724,7 @@ TOOLS.push(T('sstp-server', 'vpn', 'SSTP Server', 'SSTP Server',
     L.push('/ppp profile add name=profil-sstp local-address=' + v.gw + ' remote-address=pool-sstp');
     L.push('/interface sstp-server server set enabled=yes certificate=' + v.cert + ' default-profile=profil-sstp port=' + v.port + ' authentication=mschap2 tls-version=only-1.2');
     L.push('/ppp secret add name=' + q(v.user) + ' password=' + q(v.pass) + ' service=sstp profile=profil-sstp');
-    L.push('/ip firewall filter add chain=input protocol=tcp dst-port=' + v.port + ' action=accept comment="Izinkan SSTP masuk" place-before=0');
+    L.push('/ip firewall filter add chain=input protocol=tcp dst-port=' + v.port + ' action=accept comment="Izinkan SSTP masuk"');
     return H('SSTP Server') + L.join('\n') + '\n';
   },
   function () {
@@ -4993,7 +5002,7 @@ TOOLS.push(T('ap-rumahan', 'wireless', 'Access Point Rumahan', 'Home Access Poin
     f('tipe', 'Jenis perangkat', 'select', 'wifi', { opts: [{ v: 'wifi', l: 'Baru: menu /interface wifi (wifiwave2, ax)' }, { v: 'wireless', l: 'Lama: menu /interface wireless' }] }),
     f('iface', 'Nama interface radio', 'text', 'wifi1', { mono: 1, help: 'Umumnya wifi1 atau wlan1 untuk radio pertama, wifi2 atau wlan2 untuk radio kedua.' }),
     f('ssid', 'Nama jaringan (SSID)', 'text', 'RumahKami', {}),
-    f('pass', 'Kata sandi WiFi (minimal 8 karakter)', 'text', '', { mono: 1, help: 'Kosong tidak diizinkan oleh WPA2. Pakai kalimat yang mudah diingat penghuni rumah, bukan tanggal lahir.' })
+    f('pass', 'Kata sandi WiFi (minimal 8 karakter)', 'text', 'rumahkami123', { mono: 1, help: 'Nilai bawaan hanya contoh. Kosong tidak diizinkan oleh WPA2. Pakai kalimat yang mudah diingat penghuni rumah, bukan tanggal lahir.' })
   ],
   function (v) {
     if (v.tipe === 'wifi' && RV() !== 6) {
@@ -5668,7 +5677,7 @@ var SNIPPETS = [
   {
     judul: 'Kunci Winbox hanya dari jaringan pengelola',
     desc: 'Dua lapis: batasi alamat sumber layanan Winbox, dan saring port 8291 di firewall input. Ganti jaringan pengelola dengan jaringanmu.',
-    kode: '/ip service set winbox address=192.168.88.0/24\n/ip firewall filter add chain=input protocol=tcp dst-port=8291 src-address=192.168.88.0/24 action=accept comment="Winbox dari jaringan pengelola" place-before=0\n/ip firewall filter add chain=input protocol=tcp dst-port=8291 action=drop comment="Winbox dari tempat lain ditolak" place-before=1'
+    kode: '/ip service set winbox address=192.168.88.0/24\n/ip firewall filter add chain=input protocol=tcp dst-port=8291 src-address=192.168.88.0/24 action=accept comment="Winbox dari jaringan pengelola"\n/ip firewall filter add chain=input protocol=tcp dst-port=8291 action=drop comment="Winbox dari tempat lain ditolak"'
   },
   {
     judul: 'Ekspor daftar pengguna hotspot ke berkas teks',
